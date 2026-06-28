@@ -48,6 +48,13 @@ def _fetch_photos(name, city="上海"):
                 _t.sleep(1)  # 重试前等1秒
             continue
     _last_fetch_time = _t.time()
+    if not urls:
+        # 降级：百度/Bing搜图
+        try:
+            from utils.image_fetcher import get_photos as _gp
+            urls = _gp(name, city)
+        except:
+            pass
     _photo_cache[name] = urls
     return urls
 
@@ -102,11 +109,32 @@ def _color_for(name, is_food):
 
 
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
-                       transport="", accommodation="", budget="", preference="", tips=None):
+                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city=""):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
+    import datetime as _dt
+    date_range_str = ""
+    if weather and weather.get("forecast"):
+        forecasts = weather["forecast"]
+        try:
+            d1 = _dt.datetime.strptime(forecasts[0]["date"], "%Y-%m-%d")
+            d2 = _dt.datetime.strptime(forecasts[-1]["date"], "%Y-%m-%d")
+            if d1.month == d2.month:
+                date_range_str = f"{d1.month}月{d1.day}日—{d2.day}日"
+            else:
+                date_range_str = f"{d1.month}月{d1.day}日—{d2.month}月{d2.day}日"
+        except Exception:
+            date_range_str = f"{forecasts[0]['date']}—{forecasts[-1]['date']}"
+    if not date_range_str:
+        date_range_str = "出行日期"
+
+    num_days = len(itinerary) if itinerary else 2
+    day_label_map = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七"}
+    trip_label = f"{day_label_map.get(num_days, str(num_days))}日深度游"
+
     day_html_parts = []
     all_items_flat = []
     hotel_html_parts = []
+    all_hotels_data = []  # 存储所有酒店数据供 JS 使用
     total_km = 0
 
     for di, day in enumerate(itinerary):
@@ -127,8 +155,36 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             clat = sum(l[1] for l in day_locations) / len(day_locations)
             hotels = _search_hotels([clng, clat], city)
         if hotels:
-            hc = "".join(f'<div class="hc"><div class="hn">{h["name"]}</div><div class="hm">⭐{h.get("rating","?")} | 💰约{h.get("cost","?")}/晚 | {h.get("distance","?")}m</div></div>' for h in hotels[:3])
-            hotel_html_parts.append(f'<div class="hs"><div class="ht">Day {day["day"]} 推荐住宿</div><div class="hw">{hc}</div></div>')
+            day_num = day["day"]
+            hc = ""
+            for hi, h in enumerate(hotels[:3]):
+                cost_val = h.get("cost", "")
+                cost_display = f"¥{cost_val}/晚" if cost_val and cost_val != "?" else "暂无报价"
+                cost_class = "hpr" if cost_val and cost_val != "?" else "hpr no-price"
+                rating_val = h.get("rating", "")
+                rating_display = rating_val if rating_val and rating_val != "?" else "--"
+                dist_val = h.get("distance", "")
+                dist_display = f"{dist_val}m" if dist_val else ""
+                tel_val = h.get("tel", "")
+                tel_html = f'<span class="htel">📞 {tel_val}</span>' if tel_val else ""
+                selected_class = "selected" if hi == 0 else ""
+                hc += (
+                    f'<div class="hc {selected_class}" data-day="{day_num}" data-idx="{hi}" onclick="selectHotel({day_num},{hi})">' 
+                    f'<div class="hc-check">{"✓" if hi == 0 else ""}</div>'
+                    f'<div class="hc-info">'
+                    f'<div class="hc-row1"><span class="hn">{h["name"]}</span><span class="hsg">⭐{rating_display}</span></div>'
+                    f'<div class="hc-row2"><span class="{cost_class}">{cost_display}</span>'
+                    f'{f"<span class=hdi>{dist_display}</span>" if dist_display else ""}'
+                    f'{tel_html}</div>'
+                    f'</div>'
+                    f'</div>'
+                )
+                hloc = h.get("location", "")
+                if isinstance(hloc, str) and "," in hloc:
+                    hlng, hlat = hloc.split(",")
+                    all_items_flat.append({"name":h["name"],"loc":[float(hlng),float(hlat)],"type":"hotel","day":day_num,"time":"","hIdx":hi})
+                    all_hotels_data.append({"name":h["name"],"loc":[float(hlng),float(hlat)],"day":day_num,"idx":hi,"rating":rating_display,"cost":cost_display})
+            hotel_html_parts.append(f'<div class="hs"><div class="ht">Day {day_num} 推荐住宿 <span class="ht-hint">点击选择 · 联动地图</span></div><div class="hw">{hc}</div></div>')
 
         def _tk(s):
             t = s["data"].get("time_slot","")
@@ -157,7 +213,21 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             if d.get("cost"): tags.append(f'<span class="t b">{d["cost"]}</span>')
             if is_food and d.get("cuisine"): tags.append(f'<span class="t o">🍳 {d["cuisine"]}</span>')
             if d.get("time_slot"): tags.append(f'<span class="t ti">🕐 {d["time_slot"]}</span>')
-            if d.get("transit"): tags.append(f'<span class="t tr">🚗 {d["transit"]}</span>')
+            transit_text = d.get("transit", "")
+            if transit_text:
+                if "步行" in transit_text or "走" in transit_text:
+                    t_icon = "🚶"
+                elif "地铁" in transit_text:
+                    t_icon = "🚇"
+                elif "公交" in transit_text or "巴士" in transit_text:
+                    t_icon = "🚌"
+                elif "骑" in transit_text:
+                    t_icon = "🚲"
+                elif "出发" in transit_text:
+                    t_icon = "🏁"
+                else:
+                    t_icon = "🚗"
+                tags.append(f'<span class="t tr">{t_icon} {transit_text}</span>')
 
             overlay = f'<div class="po">{name_short}</div>' if not has_photo else ""
             all_items_flat.append({"name":d["name"],"loc":d.get("location",[121.47,31.23]),"type":is_food,"day":day["day"],"time":d.get("time_slot","")})
@@ -173,12 +243,20 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 </div>
             </div>"""
 
+        d_label = f'第{day["day"]}天'
+        if weather and weather.get("forecast") and di < len(weather["forecast"]):
+            try:
+                date_str = weather["forecast"][di]["date"]
+                dt_obj = _dt.datetime.strptime(date_str, "%Y-%m-%d")
+                d_label = f"{dt_obj.month}月{dt_obj.day}日"
+            except Exception:
+                pass
         day_html_parts.append(f"""
         <div class="ds">
             <div class="dh" style="background:linear-gradient(135deg,hsl({210+di*30},70%,50%),hsl({210+di*30},70%,30%));">
                 <div class="dn">Day {day['day']}</div>
                 <div class="dt">{day.get('label','')}</div>
-                <div class="dd">7月{4+day['day']}日</div>
+                <div class="dd">{d_label}</div>
             </div>
             {f'<div class="dsm">{day.get("summary","")}</div>' if day.get("summary") else ''}
             <div class="ccont">{day_html}</div>
@@ -213,23 +291,45 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         <ul class="tl">{''.join(items)}</ul>
     </div>"""
 
+    # 天气信息
+    whtml = ""
+    if weather and weather.get("success"):
+        forecast = weather.get("forecast", [])
+        wx_suggestions = weather.get("suggestions", [])
+        cards = ""
+        for d in forecast[:3]:
+            cards += f'<div class="wf"><div class="wd">{d["date"][5:]}</div><div class="ww">{d["day_weather"]}</div><div class="wt">{d["temp_range"]}</div></div>'
+        wx_sug = ""
+        for s in wx_suggestions[:3]:
+            wx_sug += f'<div class="ws">{s}</div>'
+        whtml = f"""
+    <div class="sec wx">
+        <h2>🌤️ {weather["city"]} 天气预报</h2>
+        <div class="wf-row">{cards}</div>
+        <div class="ws-row">{wx_sug}</div>
+    </div>"""
+
     # 预算估算
     import re as _re
     budget_html = ""
     if budget:
         days = len(itinerary) if itinerary else 2
-        # 从budget字符串中提取数字，智能判断是日均还是总预算
-        daily = 3000
+        # 默认每人每天预算
+        daily = 1500
         nums = _re.findall(r'\d+', budget.replace(',', ''))
         if nums:
-            daily = int(nums[0])
-            # 如果budget包含"总预算""一共""总共"等词，视为总预算 ÷ 天数
-            if _re.search(r'总[预算共]|一[共]|总共', budget):
-                daily = daily // max(days, 1)
-            # 如果日均超过10000，很可能也是总预算
-            if daily > 10000:
-                daily = daily // max(days, 1)
-        total_budget = daily * days
+            budget_vals = [int(n) for n in nums if int(n) >= 100]
+            if budget_vals:
+                val = max(budget_vals)
+                if '人均' in budget or '每人' in budget:
+                    if '天' in budget or '日' in budget:
+                        daily = val
+                    else:
+                        daily = val // max(days, 1)
+                else:
+                    daily = val // (2 * max(days, 1))
+        daily = max(daily, 1)
+        total_budget = daily * days * 2
         accommodation_est = int(daily * 0.25)
         food_est = int(daily * 0.18)
         transport_est = int(daily * 0.12)
@@ -237,13 +337,13 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         shopping_est = daily - accommodation_est - food_est - transport_est - ticket_est
         budget_html = f"""
     <div class="sec bs">
-        <h2>💰 预算概览（{days}天 · 2人 · 约¥{daily}/天）</h2>
+        <h2>💰 预算概览（{days}天 · 2人 · 约¥{daily}/天/人）</h2>
         <div class="bg">
-            <div class="bi"><div class="bn">🏨 住宿</div><div class="bv">¥{accommodation_est*days}</div><div class="bp">{(accommodation_est/daily*100):.0f}%</div><div class="bb" style="width:{(accommodation_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🎫 门票</div><div class="bv">¥{ticket_est*days}</div><div class="bp">{(ticket_est/daily*100):.0f}%</div><div class="bb" style="width:{(ticket_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🍽️ 餐饮</div><div class="bv">¥{food_est*days}</div><div class="bp">{(food_est/daily*100):.0f}%</div><div class="bb" style="width:{(food_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🚗 交通</div><div class="bv">¥{transport_est*days}</div><div class="bp">{(transport_est/daily*100):.0f}%</div><div class="bb" style="width:{(transport_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🏨 住宿</div><div class="bv">¥{accommodation_est*days*2}</div><div class="bp">{(accommodation_est/daily*100):.0f}%</div><div class="bb" style="width:{(accommodation_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🎫 门票</div><div class="bv">¥{ticket_est*days*2}</div><div class="bp">{(ticket_est/daily*100):.0f}%</div><div class="bb" style="width:{(ticket_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🍽️ 餐饮</div><div class="bv">¥{food_est*days*2}</div><div class="bp">{(food_est/daily*100):.0f}%</div><div class="bb" style="width:{(food_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🚗 交通</div><div class="bv">¥{transport_est*days*2}</div><div class="bp">{(transport_est/daily*100):.0f}%</div><div class="bb" style="width:{(transport_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days*2}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
         </div>
         <div class="bt">预算合计 ≈ ¥{total_budget}（{transport or '出行方式'} · 2人）</div>
     </div>"""
@@ -255,6 +355,8 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 
     # 交通指南
     tg_parts = []
+    if start_city:
+        tg_parts.append(f'📍 起点：{start_city}')
     if accommodation:
         tg_parts.append(f'🏠 住宿：{accommodation}')
     if transport:
@@ -271,6 +373,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 
     # 动态封面信息
     cover_extra = []
+    if start_city: cover_extra.append(f'📍 起点：{start_city}')
     if transport: cover_extra.append(f'🚗 {transport}')
     if budget: cover_extra.append(f'💰 {budget}')
     if preference: cover_extra.append(f'🎯 {preference}')
@@ -280,7 +383,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>{city}旅行手册 | 周末两日游</title>
+<title>{city}旅行手册 | {trip_label}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -344,15 +447,36 @@ body{{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-
 .tl li.pt{{background:linear-gradient(135deg,rgba(255,107,53,0.08),rgba(239,68,68,0.03));border:1px solid rgba(255,107,53,0.15);color:#ff6b35;}}
 .tl li.dt{{background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.03));border:1px solid rgba(99,102,241,0.12);color:var(--text);}}
 .tl li.em{{background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03));border:1px solid rgba(245,158,11,0.15);color:#d97706;}}
+/* 天气 */
+.wx{{background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(52,211,153,0.04));border:1px solid rgba(16,185,129,0.12);}}
+.wx h2{{font-size:20px;margin-bottom:12px;}}
+.wf-row{{display:flex;gap:8px;margin-bottom:12px;}}
+.wf{{flex:1;padding:10px;border-radius:12px;background:var(--tbg);border:1px solid var(--border);text-align:center;}}
+.wd{{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px;}}
+.ww{{font-size:20px;margin-bottom:4px;}}
+.wt{{font-size:11px;color:var(--text3);}}
+.ws-row{{display:flex;flex-wrap:wrap;gap:6px;}}
+.ws{{font-size:12px;padding:4px 10px;border-radius:8px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15);color:var(--text2);}}
 
-/* 酒店推荐 */
-.hs{{margin:12px;padding:16px;border-radius:16px;background:linear-gradient(135deg,rgba(139,92,246,0.04),rgba(99,102,241,0.02));border:1px solid rgba(139,92,246,0.12);}}
-.ht{{font-size:15px;font-weight:600;margin-bottom:10px;color:var(--text);display:flex;align-items:center;gap:6px;}}
-.hw{{display:flex;flex-direction:column;gap:6px;}}
-.hc{{padding:8px 12px;border-radius:10px;background:var(--tbg);border:1px solid var(--border);display:flex;align-items:center;gap:10px;transition:all .2s;}}
-.hc:hover{{border-color:rgba(139,92,246,0.3);background:rgba(139,92,246,0.04);}}
-.hn{{font-size:13px;font-weight:500;color:var(--text);flex:1;}}
-.hm{{font-size:11px;color:var(--text2);white-space:nowrap;}}
+/* 酒店推荐 - 重设计 */
+.hs{{margin:12px;padding:20px;border-radius:20px;background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(99,102,241,0.03));border:1px solid rgba(139,92,246,0.15);backdrop-filter:blur(8px);}}
+.ht{{font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}}
+.ht-hint{{font-size:11px;font-weight:400;color:var(--text3);margin-left:auto;}}
+.hw{{display:flex;flex-direction:column;gap:10px;}}
+.hc{{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;background:var(--card);border:2px solid var(--border2);cursor:pointer;transition:all .3s ease;position:relative;}}
+.hc:hover{{border-color:rgba(139,92,246,0.4);background:rgba(139,92,246,0.06);transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,0.1);}}
+.hc.selected{{border-color:rgba(16,185,129,0.6);background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(52,211,153,0.04));box-shadow:0 0 0 1px rgba(16,185,129,0.2);}}
+.hc-check{{width:24px;height:24px;border-radius:50%;border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;color:#10b981;flex-shrink:0;transition:all .2s;}}
+.hc.selected .hc-check{{background:#10b981;border-color:#10b981;color:#fff;}}
+.hc-info{{flex:1;min-width:0;}}
+.hc-row1{{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}}
+.hc-row2{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}}
+.hn{{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px;}}
+.hsg{{font-size:12px;color:#f59e0b;font-weight:600;flex-shrink:0;}}
+.hpr{{font-size:13px;color:#10b981;font-weight:700;}}
+.hpr.no-price{{color:var(--text3);font-weight:400;font-style:italic;}}
+.hdi{{font-size:11px;color:var(--text3);padding:2px 8px;background:var(--tbg);border-radius:6px;}}
+.htel{{font-size:11px;color:var(--text2);}}
 
 /* 预算概览 */
 .bs{{background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(16,185,129,0.02));border:1px solid rgba(16,185,129,0.12);}}
@@ -389,9 +513,9 @@ body{{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-
 <button class="tb" onclick="tt()" title="切换主题">🌙</button>
 
 <div class="cover">
-    <h1>{city}·周末两日游</h1>
+    <h1>{city}·{trip_label}</h1>
     <div class="cs">美食与景点 · 深度体验指南</div>
-    <div class="ci"><span>📅 7月5日—7月6日</span><span>🏠 {accommodation or '市中心'}</span><span>🍽️ 美食 · 🏛️ 景点</span>{f'<span>{cover_extra_html}</span>' if cover_extra_html else ''}</div>
+    <div class="ci"><span>📅 {date_range_str}</span><span>🏠 {accommodation or '市中心'}</span><span>🍽️ 美食 · 🏛️ 景点</span>{f'<span>{cover_extra_html}</span>' if cover_extra_html else ''}</div>
 </div>
 
 {''.join(day_html_parts)}
@@ -400,6 +524,8 @@ body{{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-
 
 {thtml}
 
+{whtml}
+
 {budget_html}
 
 <!-- 交互式地图（按日切换） -->
@@ -407,12 +533,13 @@ body{{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-
     <h2>🗺️ 行程地图</h2>
     <div class="map-tabs">
         <button class="mt" data-day="all" onclick="switchMapDay('all')">📍 全部</button>
-        <button class="mt active" data-day="1" onclick="switchMapDay(1)">Day 1</button>
-        <button class="mt" data-day="2" onclick="switchMapDay(2)">Day 2</button>
+        {''.join(f'<button class="mt{" active" if i==0 else ""}" data-day="{day["day"]}" onclick="switchMapDay({day["day"]})">Day {day["day"]}</button>' for i, day in enumerate(itinerary))}
+        <button class="mt" data-day="hotel" onclick="switchMapDay('hotel')">🏨 住宿</button>
     </div>
     <div class="legend">
         <span><span class="legend-dot" style="background:#64b4ff"></span>景点</span>
         <span><span class="legend-dot" style="background:#ff6b35"></span>餐厅</span>
+        <span><span class="legend-dot" style="background:#10b981"></span>住宿</span>
     </div>
     <div id="map"></div>
 </div>
@@ -435,29 +562,72 @@ var map = L.map('map',{{zoomControl:true,attributionControl:false}});
 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:18}}).addTo(map);
 
 var allItems = {map_items_json};
+var allHotels = {json.dumps(all_hotels_data, ensure_ascii=False)};
 var markers = [];
+var polylines = [];
 var currentDay = 'all';
-var dayColors = ['hsl(210,70%,50%)','hsl(240,70%,50%)','hsl(330,70%,50%)'];
+var dayColors = ['hsl(210,70%,50%)','hsl(240,70%,50%)','hsl(330,70%,50%)','hsl(30,70%,50%)','hsl(150,70%,50%)','hsl(270,70%,50%)','hsl(0,70%,50%)'];
+
+// 每天被选中的酒店索引 (默认选第一家)
+var selectedHotels = {{}};
+allHotels.forEach(function(h){{
+    if(selectedHotels[h.day] === undefined) selectedHotels[h.day] = 0;
+}});
+
+function getItemColor(item) {{
+    if(item.type==='hotel') return '#10b981';
+    if(item.type) return '#ff6b35';
+    return dayColors[(item.day-1)%dayColors.length];
+}}
+function getItemLabel(item) {{
+    if(item.type==='hotel') return '🏨';
+    if(item.type) return '🍴';
+    return item.day;
+}}
 
 function renderMap(day) {{
     markers.forEach(function(m){{map.removeLayer(m);}});
+    polylines.forEach(function(p){{map.removeLayer(p);}});
     markers = [];
-    var items = day === 'all' ? allItems : allItems.filter(function(i){{return i.day === day;}});
+    polylines = [];
+    var items;
+    if(day === 'all') {{
+        items = allItems.filter(function(i){{
+            if(i.type==='hotel') return i.hIdx === selectedHotels[i.day];
+            return true;
+        }});
+    }} else if(day === 'hotel') {{
+        items = allItems.filter(function(i){{return i.type==='hotel' && i.hIdx === selectedHotels[i.day];}});
+    }} else {{
+        items = allItems.filter(function(i){{
+            if(i.type==='hotel') return i.day === day && i.hIdx === selectedHotels[i.day];
+            return i.day === day;
+        }});
+    }}
+    var orderedCoords = [];
     items.forEach(function(item,i){{
         if(!item.loc||item.loc.length<2) return;
-        var color = item.type ? '#ff6b35' : dayColors[(item.day-1)%dayColors.length];
-        var label = item.type ? '🍴' : (item.day);
+        var color = getItemColor(item);
+        var label = getItemLabel(item);
         var icon = L.divIcon({{
-            html:'<div style="width:28px;height:28px;border-radius:50%;background:'+color+';color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.7);box-shadow:0 2px 8px rgba(0,0,0,0.3);">'+label+'</div>',
-            className:'',iconSize:[28,28],iconAnchor:[14,14]
+            html:'<div style="width:30px;height:30px;border-radius:50%;background:'+color+';color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.8);box-shadow:0 2px 10px rgba(0,0,0,0.35);">'+label+'</div>',
+            className:'',iconSize:[30,30],iconAnchor:[15,15]
         }});
         var m = L.marker([item.loc[1],item.loc[0]],{{icon:icon}}).addTo(map);
-        m.bindPopup('<b>'+item.name+'</b>'+(item.time?'<br>🕐 '+item.time:'')+(item.type?'<br>🍴 推荐餐厅':''));
+        var ptype = item.type==='hotel'?'<br>🏨 推荐住宿':(item.type?'<br>🍴 推荐餐厅':'');
+        m.bindPopup('<b>'+item.name+'</b>'+(item.time?'<br>🕐 '+item.time:'')+ptype);
         markers.push(m);
+        orderedCoords.push([item.loc[1],item.loc[0]]);
     }});
+    // 画路线连线
+    if(orderedCoords.length>=2 && day !== 'hotel') {{
+        var lineColor = typeof day === 'number' ? dayColors[(day-1)%dayColors.length] : '#a78bfa';
+        var pl = L.polyline(orderedCoords, {{color:lineColor,weight:3,opacity:0.5,dashArray:'8,6'}}).addTo(map);
+        polylines.push(pl);
+    }}
     var coords = items.filter(function(i){{return i.loc&&i.loc.length>=2;}}).map(function(i){{return [i.loc[1],i.loc[0]];}});
     if(coords.length>=2) map.fitBounds(L.latLngBounds(coords),{{padding:[30,30]}});
-    else if(coords.length===1) map.setView(coords[0],12);
+    else if(coords.length===1) map.setView(coords[0],13);
 }}
 
 function switchMapDay(day) {{
@@ -468,6 +638,22 @@ function switchMapDay(day) {{
     renderMap(day);
 }}
 
+function selectHotel(day, idx) {{
+    selectedHotels[day] = idx;
+    // 更新酒店卡片 UI
+    document.querySelectorAll('.hc[data-day="'+day+'"]').forEach(function(card){{
+        var ci = parseInt(card.getAttribute('data-idx'));
+        if(ci === idx) {{
+            card.classList.add('selected');
+            card.querySelector('.hc-check').textContent = '✓';
+        }} else {{
+            card.classList.remove('selected');
+            card.querySelector('.hc-check').textContent = '';
+        }}
+    }});
+    renderMap(currentDay);
+}}
+
 renderMap(1);
 </script>
 </body>
@@ -475,12 +661,12 @@ renderMap(1);
 
 
 def generate(city="上海", itinerary=None, food_highlights=None, overall_note="",
-             transport="", accommodation="", budget="", preference="", tips=None):
+             transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city=""):
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
     html = generate_brochure(itinerary, city, food_highlights, overall_note,
-                            transport, accommodation, budget, preference, tips)
+                            transport, accommodation, budget, preference, tips, weather, start_city)
     outputs_dir = os.path.join(BASE, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     import re

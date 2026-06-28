@@ -119,23 +119,51 @@ class AMapClient:
 
     def geocode(self, address, city=""):
         """
-        地理编码: 地址 → 坐标
-        GET /v3/geocode/geo
-        address: 结构化地址 (如 "上海市东方明珠")
-        city: 限定城市 (可选)
-        返回: (经度, 纬度) 或 None
+        地理编码: 地址 → 坐标，带城市偏差检测+POI搜索兜底
         """
-        self._rate_limit()
-        params = {"address": address, "output": "JSON"}
-        if city:
-            params["city"] = city
-        url = _build_url("/v3/geocode/geo", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1" and data.get("geocodes"):
-            loc = data["geocodes"][0]["location"]
-            lng, lat = loc.split(",")
-            return (float(lng), float(lat))
-        return None
+        city_centers = {"安吉": (119.6, 30.5), "杭州": (120.15, 30.28),
+                        "上海": (121.47, 31.23), "北京": (116.4, 39.9)}
+        expected_center = None
+        for k, v in city_centers.items():
+            if k in city or k in address:
+                expected_center = v
+                break
+
+        coord = None
+        # 1. 尝试常规地理编码
+        for attempt in range(2):
+            self._rate_limit()
+            params = {"address": address, "output": "JSON"}
+            if city:
+                params["city"] = city
+            url = _build_url("/v3/geocode/geo", key=self.key, **params)
+            data = _request(url)
+            if data.get("status") == "1" and data.get("geocodes"):
+                loc = data["geocodes"][0]["location"]
+                lng, lat = loc.split(",")
+                coord = (float(lng), float(lat))
+                # 检查偏差
+                if expected_center:
+                    dist = abs(coord[0] - expected_center[0]) * 111 + abs(coord[1] - expected_center[1]) * 111
+                    if dist > 200:
+                        coord = None  # 偏离过载，视为无效，需要兜底
+                        continue
+                break
+            if attempt == 0:
+                time.sleep(0.3)
+
+        # 2. 如果常规地理编码失败或偏离，使用关键词搜索 place_text 进行 POI 兜底
+        if not coord:
+            try:
+                pois = self.place_text(keywords=address, region=city, city_limit=True, page_size=1)
+                if pois:
+                    loc = pois[0]["location"]
+                    lng, lat = loc.split(",")
+                    coord = (float(lng), float(lat))
+            except Exception as e:
+                print(f"⚠️ POI搜索兜底失败: {e}")
+
+        return coord
 
     def reverse_geocode(self, location, radius=1000, extensions="base"):
         """
@@ -348,6 +376,22 @@ class AMapClient:
                 matrix[j][i] = {"distance": dist, "duration": dur}
             matrix[i][i] = {"distance": 0, "duration": 0}
         return {"matrix": matrix, "labels": labels}
+    def get_ip_location(self):
+        """
+        通过 IP 定位获取用户当前所在城市
+        """
+        self._rate_limit()
+        try:
+            url = f"https://restapi.amap.com/v3/ip?key={self.key}"
+            data = _request(url)
+            if data.get("status") == "1" and data.get("city"):
+                city = data["city"]
+                if isinstance(city, str):
+                    city = city.replace("市", "").replace("省", "")
+                return city
+        except Exception as e:
+            print(f"⚠️ IP定位失败: {e}")
+        return None
 
 
 # ---- 独立测试 ----

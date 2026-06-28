@@ -113,8 +113,33 @@ class XiaoHongShu:
                 key, _, value = line.partition(":")
                 key = key.strip()
                 value = value.strip().strip("'\"")
-                if value and value != "null":
-                    current[key] = value
+                if value == ">-":
+                    # YAML折叠值标记，下一行是真正的值
+                    current["_fold_" + key] = True
+                    current[key] = ""
+                elif key.startswith("_fold_"):
+                    # 上一行是折叠标记，清理
+                    pass
+                elif value and value != "null":
+                    # 检查是否URL（如 https://... 被误解析为 key: value）
+                    if key in ("http", "https"):
+                        # 这是折叠URL的续行
+                        for k in list(current.keys()):
+                            if k.startswith("_fold_"):
+                                real_key = k[6:]
+                                current[real_key] = line.strip().strip("'\"")
+                                del current[k]
+                                break
+                    else:
+                        current[key] = value
+            elif line.strip().startswith("http") or line.strip().startswith("//"):
+                # URL行，可能属于前面的折叠键
+                for k in list(current.keys()):
+                    if k.startswith("_fold_"):
+                        real_key = k[6:]
+                        current[real_key] = line.strip().strip("'\"")
+                        del current[k]
+                        break
         if current and current.get("title"):
             notes.append(current)
         return notes

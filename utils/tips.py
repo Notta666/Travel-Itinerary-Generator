@@ -15,13 +15,14 @@ def _season():
     if 9 <= m <= 11: return "秋季(9-11月)", "秋高气爽，昼夜温差大"
     return "冬季(12-2月)", "寒冷干燥，需保暖防滑"
 
-def generate_tips(city="上海", days=2, transport="", preference="", budget=""):
+def generate_tips(city="上海", days=2, transport="", preference="", budget="", start_city=""):
     """生成出行建议，返回 {general: [...], preference_tips: [...], daily_tips: [...], emergency: ""}"""
     month, season_desc = _season()
     season_name = month.split("(")[0] if "(" in month else month
 
     prompt = f"""你是一个出行安全与旅行贴士专家。根据以下信息生成实用建议。
 
+【起点/出发城市】{start_city or '未指定'}
 【目的地】{city}
 【天数】{days}天
 【当前季节】{season_name}（{season_desc}）
@@ -31,7 +32,7 @@ def generate_tips(city="上海", days=2, transport="", preference="", budget="")
 
 【通用建议要求】
 1. 基于{city}的{city}气候特点给出针对性建议
-2. 如果交通方式是自驾，给出出发时间建议避开高峰
+2. 如果交通方式是自驾，给出出发时间建议避开高峰；如果起点与目的地距离较远，给出合适的出行路线、时间与交通工具对比建议。
 3. 列出必备物品清单（身份证、充电宝、防晒等）
 4. 给出{season_name}的着装和防护建议
 
