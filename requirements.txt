@@ -1,0 +1,7 @@
+# Python 3.10+ standard library is used for the core system.
+# No external Python package dependencies are required to run the core pipeline.
+#
+# Optional development packages:
+pytest>=7.0.0
+black>=23.0.0
+flake8>=6.0.0

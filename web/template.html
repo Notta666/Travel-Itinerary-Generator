@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>{title} | 旅行攻略</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --glass-bg: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.15);
+  --glass-shadow: 0 8px 32px 0 rgba(0,0,0,0.2);
+  --primary: hsl(210,100%,70%);
+  --text: #e8edf5;
+  --text-secondary: rgba(232,237,245,0.65);
+  --bg: #0f1219;
+  --surface: rgba(255,255,255,0.04);
+  --card-bg: rgba(255,255,255,0.06);
+  --tag-bg: rgba(255,255,255,0.08);
+  --blur: blur(16px);
+  --day1: hsl(210,100%,70%);
+  --day2: hsl(140,70%,60%);
+  --day3: hsl(30,90%,65%);
+  --day4: hsl(270,70%,70%);
+  --day5: hsl(0,70%,65%);
+  font-family: 'Inter', 'Outfit', -apple-system, sans-serif;
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --glass-bg: rgba(255,255,255,0.7);
+  --glass-border: rgba(0,0,0,0.08);
+  --glass-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  --primary: hsl(210,100%,50%);
+  --text: #1a1d26;
+  --text-secondary: rgba(26,29,38,0.55);
+  --bg: #f5f6fa;
+  --surface: rgba(255,255,255,0.8);
+  --card-bg: rgba(255,255,255,0.85);
+  --tag-bg: rgba(0,0,0,0.05);
+  --day1: hsl(210,100%,45%);
+  --day2: hsl(140,70%,40%);
+  --day3: hsl(30,90%,45%);
+  --day4: hsl(270,70%,50%);
+  --day5: hsl(0,70%,45%);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); min-height:100vh; transition:all 0.3s; overflow-x:hidden; }
+
+.header {
+  position:sticky; top:0; z-index:1000;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+  background:var(--glass-bg); border-bottom:1px solid var(--glass-border);
+  padding:16px 20px; display:flex; align-items:center; justify-content:space-between;
+}
+.header h1 {
+  font-family:'Outfit',sans-serif; font-size:20px; font-weight:600;
+  background:linear-gradient(135deg,var(--primary),#a78bfa);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.theme-toggle {
+  background:var(--card-bg); border:1px solid var(--glass-border); color:var(--text);
+  width:36px; height:36px; border-radius:50%; cursor:pointer; font-size:16px;
+  backdrop-filter:var(--blur); transition:all 0.2s; display:flex; align-items:center; justify-content:center;
+}
+.theme-toggle:hover { background:var(--tag-bg); transform:scale(1.05); }
+
+.day-tabs {
+  display:flex; gap:8px; padding:12px 20px; overflow-x:auto;
+  -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  border-bottom:1px solid var(--glass-border);
+}
+.day-tabs::-webkit-scrollbar { display:none; }
+.day-tab {
+  flex-shrink:0; padding:8px 18px; border-radius:20px;
+  border:1px solid var(--glass-border); background:var(--card-bg);
+  color:var(--text-secondary); font-size:14px; font-weight:500;
+  cursor:pointer; transition:all 0.25s; backdrop-filter:var(--blur);
+}
+.day-tab:hover { background:var(--tag-bg); }
+.day-tab.active { color:#fff; box-shadow:0 0 20px rgba(100,180,255,0.2); }
+.day-tab.d1.active { background:var(--day1); border-color:var(--day1); }
+.day-tab.d2.active { background:var(--day2); border-color:var(--day2); }
+.day-tab.d3.active { background:var(--day3); border-color:var(--day3); }
+.day-tab.d4.active { background:var(--day4); border-color:var(--day4); }
+.day-tab.d5.active { background:var(--day5); border-color:var(--day5); }
+
+.map-container { position:relative; width:100%; height:420px; }
+#map { width:100%; height:100%; z-index:1; }
+.map-overlay-info {
+  position:absolute; top:12px; left:12px; z-index:2;
+  background:var(--glass-bg); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+  border:1px solid var(--glass-border); border-radius:12px;
+  padding:10px 14px; font-size:12px; color:var(--text-secondary); pointer-events:none;
+}
+.day-summary {
+  margin:0 20px 8px; padding:12px 16px;
+  background:var(--card-bg); border:1px solid var(--glass-border);
+  border-radius:12px; font-size:14px; line-height:1.5;
+  color:var(--text-secondary); backdrop-filter:var(--blur);
+}
+.poi-list { padding:8px 20px 20px; display:flex; flex-direction:column; gap:10px; max-width:720px; margin:0 auto; }
+.poi-card {
+  background:var(--card-bg); border:1px solid var(--glass-border);
+  border-radius:16px; padding:14px 16px;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+  transition:all 0.2s; cursor:pointer;
+}
+.poi-card:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(0,0,0,0.12); }
+.poi-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:4px; }
+.poi-name { font-size:15px; font-weight:600; color:var(--text); line-height:1.3; }
+.poi-step {
+  flex-shrink:0; width:26px; height:26px; border-radius:50%;
+  font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:center;
+  color:#fff;
+}
+.poi-step.p1 { background:var(--day1); } .poi-step.p2 { background:var(--day2); }
+.poi-step.p3 { background:var(--day3); } .poi-step.p4 { background:var(--day4); }
+.poi-step.p5 { background:var(--day5); }
+
+.poi-time { font-size:12px; color:var(--primary); font-weight:500; margin-bottom:4px; }
+.poi-address { font-size:12px; color:var(--text-secondary); margin-bottom:4px; line-height:1.4; }
+.poi-transit { font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
+.poi-transit span { color:var(--primary); }
+.poi-note { font-size:12px; color:var(--text-secondary); font-style:italic; margin-bottom:6px; }
+
+.poi-tags { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
+.poi-tag {
+  background:var(--tag-bg); border-radius:6px; padding:2px 8px;
+  font-size:11px; color:var(--text-secondary); border:1px solid var(--glass-border);
+}
+.poi-tag.rating-high { color:#f59e0b; border-color:rgba(245,158,11,0.3); }
+.poi-tag.rating-mid { color:#10b981; border-color:rgba(16,185,129,0.3); }
+.poi-tag.cost-tag { color:var(--primary); border-color:rgba(100,180,255,0.3); }
+
+.poi-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.poi-btn {
+  display:inline-flex; align-items:center; gap:3px;
+  padding:5px 12px; border-radius:8px; font-size:11px; font-weight:500;
+  text-decoration:none; background:var(--tag-bg); color:var(--text);
+  border:1px solid var(--glass-border); transition:all 0.2s;
+}
+.poi-btn:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+.poi-btn.xhs { color:#ff2442; }
+.poi-btn.xhs:hover { background:#ff2442; color:#fff; border-color:#ff2442; }
+
+.footer { text-align:center; padding:24px 20px; font-size:12px; color:var(--text-secondary); border-top:1px solid var(--glass-border); margin-top:20px; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-secondary); }
+
+@media (max-width:480px) {
+  .header { padding:12px 16px; }
+  .header h1 { font-size:17px; }
+  .map-container { height:300px; }
+  .poi-list { padding:8px 16px 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📍 {title}</h1>
+  <button class="theme-toggle" onclick="toggleTheme()" title="切换主题">🌙</button>
+</div>
+
+<div class="day-tabs" id="dayTabs"></div>
+
+<div class="map-container">
+  <div id="map"></div>
+  <div class="map-overlay-info" id="mapInfo">点击POI卡片查看详情</div>
+</div>
+
+<div class="day-summary" id="daySummary"></div>
+
+<div class="poi-list" id="poiList"></div>
+
+<div class="footer">💡 点击POI卡片在地图上定位 · 导航按钮跳转地图APP</div>
+
+<script>
+const ITINERARY = {itinerary_json};
+const DIST_MATRIX = {distance_matrix};
+
+const DAY_COLORS = [
+  'var(--day1)', 'var(--day2)', 'var(--day3)',
+  'var(--day4)', 'var(--day5)',
+];
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.querySelector('.theme-toggle').textContent = next === 'dark' ? '🌙' : '☀️';
+}
+
+// ===== 地图 =====
+const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([31.23, 121.47], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+
+let markers = [];
+let polylines = [];
+let currentDay = 1;
+
+function getDayData(day) {
+  return ITINERARY.find(d => d.day === day);
+}
+
+function clearLayers() {
+  markers.forEach(m => map.removeLayer(m)); markers = [];
+  polylines.forEach(p => map.removeLayer(p)); polylines = [];
+}
+
+function renderDay(day) {
+  clearLayers();
+  const data = getDayData(day);
+  if (!data) return;
+
+  const pois = data.pois || [];
+  const foods = data.foods || [];
+  const color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
+  const dayIdx = day - 1;
+
+  // —— 地图标记：景点 + 餐厅 ——
+  let allItems = [
+    ...pois.map((p, i) => ({ ...p, _idx: i, _type: 'sight' })),
+    ...foods.map((f, i) => ({ ...f, _idx: i, _type: 'food' })),
+  ];
+
+  allItems.forEach((item, globalIdx) => {
+    if (!item.location || item.location.length < 2) return;
+    const [lng, lat] = item.location;
+    const isFood = item._type === 'food';
+    const bg = isFood ? '#ff6b35' : color;
+    const label = isFood ? '🍴' : (globalIdx + 1);
+    const icon = L.divIcon({
+      html: `<div style="width:30px;height:30px;border-radius:50%;
+        background:${bg};color:#fff;font-size:${isFood?'14':'12'}px;font-weight:600;
+        display:flex;align-items:center;justify-content:center;
+        border:2px solid rgba(255,255,255,0.7);
+        box-shadow:0 2px 8px rgba(0,0,0,0.3);">${label}</div>`,
+      className: '', iconSize: [30,30], iconAnchor: [15,15],
+    });
+    const m = L.marker([lat, lng], { icon }).addTo(map);
+    m.bindPopup(`<b>${isFood?'🍴':'📍'} ${item.name}</b>`);
+    markers.push(m);
+  });
+
+  // 路线连线（只连景点）
+  const coords = pois.filter(p => p.location && p.location.length >= 2)
+    .map(p => [p.location[1], p.location[0]]);
+  if (coords.length >= 2) {
+    const polyline = L.polyline(coords, {
+      color: color, weight: 3, opacity: 0.6, dashArray: '8, 6', lineJoin: 'round',
+    }).addTo(map);
+    polylines.push(polyline);
+    for (let i = 0; i < coords.length - 1; i++) {
+      const mid = [(coords[i][0] + coords[i+1][0])/2, (coords[i][1] + coords[i+1][1])/2];
+      let distText = '';
+      if (DIST_MATRIX && DIST_MATRIX.labels) {
+        const a = pois[i].name;
+        const b = pois[i+1].name;
+        const ai = DIST_MATRIX.labels.indexOf(a);
+        const bi = DIST_MATRIX.labels.indexOf(b);
+        if (ai >= 0 && bi >= 0 && DIST_MATRIX.matrix[ai] && DIST_MATRIX.matrix[ai][bi]) {
+          const d = DIST_MATRIX.matrix[ai][bi];
+          if (d && d.distance) {
+            distText = d.distance > 1000 ? (d.distance/1000).toFixed(1)+'km' : d.distance+'m';
+            if (d.duration) distText += ' · ' + Math.round(d.duration/60) + 'min';
+          }
+        }
+      }
+      if (distText) {
+        const labelIcon = L.divIcon({
+          html: `<div style="background:var(--card-bg,rgba(0,0,0,0.5));color:var(--text,#fff);
+            padding:1px 6px;border-radius:8px;font-size:10px;white-space:nowrap;
+            border:1px solid ${color};">${distText}</div>`,
+          className: '', iconSize: [0,0],
+        });
+        polylines.push(L.marker(mid, { icon: labelIcon, interactive: false }).addTo(map));
+      }
+    }
+  }
+
+  // 地图视野
+  const allCoords = allItems.filter(i => i.location && i.location.length >= 2)
+    .map(i => [i.location[1], i.location[0]]);
+  if (allCoords.length >= 2) {
+    map.fitBounds(L.latLngBounds(allCoords), { padding: [40,40] });
+  } else if (allCoords.length === 1) {
+    map.setView(allCoords[0], 15);
+  }
+
+  // —— POI + 美食 卡片列表 ——
+  const container = document.getElementById('poiList');
+  const totalItems = pois.length + foods.length;
+  if (totalItems === 0) {
+    container.innerHTML = '<div class="empty-state">暂无数据</div>';
+    return;
+  }
+
+  // 景点卡片
+  let sightCards = pois.map((p, idx) => {
+    const tags = [];
+    const rating = p.rating ? parseFloat(p.rating) : 0;
+    if (rating > 0) tags.push(`<span class="poi-tag ${rating >= 4 ? 'rating-high' : 'rating-mid'}">★ ${rating}</span>`);
+    if (p.cost) tags.push(`<span class="poi-tag cost-tag">¥${p.cost}</span>`);
+    return cardHtml(p, idx, 'sight', dayIdx, tags);
+  }).join('');
+
+  // 美食卡片
+  let foodCards = foods.map((f, idx) => {
+    const tags = [];
+    const rating = f.rating ? parseFloat(f.rating) : 0;
+    if (rating > 0) tags.push(`<span class="poi-tag ${rating >= 4 ? 'rating-high' : 'rating-mid'}">★ ${rating}</span>`);
+    if (f.cost) tags.push(`<span class="poi-tag cost-tag">${f.cost}</span>`);
+    if (f.cuisine) tags.push(`<span class="poi-tag" style="color:#ff6b35;border-color:rgba(255,107,53,0.3);">🍳 ${f.cuisine}</span>`);
+    return cardHtml(f, idx, 'food', dayIdx, tags);
+  }).join('');
+
+  if (foodCards) {
+    container.innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:4px 0 2px;">📍 景点</div>
+      ${sightCards || '<div style="font-size:12px;color:var(--text-secondary);padding:8px 0;">暂无景点</div>'}
+      <div style="font-size:13px;font-weight:600;color:#ff6b35;margin:12px 0 2px;">🍽️ 推荐餐厅</div>
+      ${foodCards}`;
+  } else {
+    container.innerHTML = sightCards;
+  }
+
+  // 概要
+  let summaryParts = [];
+  if (data.summary) summaryParts.push(data.summary);
+  document.getElementById('daySummary').innerHTML = summaryParts.join('<br>');
+  document.getElementById('mapInfo').textContent = `Day ${day} · ${pois.length}个景点 + ${foods.length}家餐厅`;
+}
+
+function cardHtml(item, idx, type, dayIdx, tags) {
+  const stepClass = 'p' + ((dayIdx % 5) + 1);
+  let timeHtml = item.time_slot ? `<div class="poi-time">🕐 ${item.time_slot}</div>` : '';
+  let transitHtml = item.transit ? `<div class="poi-transit">🚗 <span>${item.transit}</span></div>` : '';
+  let noteHtml = item.note ? `<div class="poi-note">💬 ${item.note}</div>` : '';
+  const icon = type === 'food' ? '🍴' : (idx + 1);
+
+  const actions = [];
+  if (item.location && item.location.length >= 2) {
+    const [lng, lat] = item.location;
+    actions.push(`<a class="poi-btn" href="https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(item.name)}" target="_blank">🗺️ 高德</a>`);
+    actions.push(`<a class="poi-btn" href="https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(item.name)}" target="_blank">🍎 地图</a>`);
+  }
+
+  return `
+    <div class="poi-card" style="${type === 'food' ? 'border-left:3px solid #ff6b35;' : ''}" onclick="focusItem(${idx},'${type}')">
+      <div class="poi-card-header">
+        <div class="poi-name">${type === 'food' ? '🍴 ' : idx+1+'. '}${item.name}</div>
+        <div class="poi-step ${stepClass}" style="${type === 'food' ? 'background:#ff6b35;' : ''}">${icon}</div>
+      </div>
+      ${timeHtml}
+      ${item.address ? `<div class="poi-address">📍 ${item.address}</div>` : ''}
+      ${transitHtml}
+      ${noteHtml}
+      <div class="poi-tags">${tags.join('')}</div>
+      <div class="poi-actions">${actions.join('')}</div>
+    </div>
+  `;
+}
+
+function focusItem(idx, type) {
+  const data = getDayData(currentDay);
+  if (!data) return;
+  const items = type === 'food' ? (data.foods || []) : (data.pois || []);
+  const p = items[idx];
+  if (p && p.location && p.location.length >= 2) {
+    map.setView([p.location[1], p.location[0]], 16);
+  }
+}
+
+// ===== 日期切换 =====
+function renderTabs() {
+  const container = document.getElementById('dayTabs');
+  container.innerHTML = ITINERARY.map(d => {
+    const cls = 'day-tab d' + ((d.day - 1) % 5 + 1) + (d.day === currentDay ? ' active' : '');
+    return `<button class="${cls}" onclick="switchDay(${d.day})">Day ${d.day} ${d.label ? '· '+d.label : ''}</button>`;
+  }).join('');
+}
+
+function switchDay(day) {
+  currentDay = day;
+  renderTabs();
+  renderDay(day);
+}
+
+// ===== 启动 =====
+renderTabs();
+if (ITINERARY.length > 0) renderDay(ITINERARY[0].day);
+</script>
+</body>
+</html>
