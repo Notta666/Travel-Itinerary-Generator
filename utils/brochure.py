@@ -18,26 +18,60 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _photo_cache = {}
 _last_fetch_time = 0
 
+def _get_single_city(name, overall_city):
+    if not overall_city:
+        return "上海"
+    cities = [c.strip() for c in overall_city.replace("，", ",").split(",") if c.strip()]
+    if len(cities) <= 1:
+        return overall_city
+    # 针对多城市列表，根据关键字自动匹配具体城市
+    for c in cities:
+        if c in name:
+            return c
+    # 特殊规则映射
+    if any(k in name for k in ["大三巴", "威尼斯人", "葡", "马介休", "玛嘉烈", "安东尼奥", "蛋挞"]):
+        return "澳门"
+    if any(k in name for k in ["清晖", "逢简", "顺德", "双皮奶", "大良", "猪肉婆"]):
+        return "佛山"
+    if any(k in name for k in ["渔女", "情侣", "日月贝", "新海利", "金悦轩", "横琴"]):
+        return "珠海"
+    if any(k in name for k in ["广州塔", "陈家祠", "炳胜", "点都德", "沙面", "陶陶居"]):
+        return "广州"
+    return cities[0]
+
 def _fetch_photos(name, city="上海"):
     """高德API获取POI照片，带重试和限流"""
     global _last_fetch_time
     if name in _photo_cache:
         return _photo_cache[name]
     urls = []
+
+    import re
+    # 移除括号及其内的分店名信息（如 陶陶居（荔湾店） -> 陶陶居）
+    cleaned = re.sub(r'[\uff08(].*?[\uff09)]', '', name).strip()
+
+    single_city = _get_single_city(cleaned, city)
+    if single_city == "顺德":
+        single_city = "佛山"
+    # 前缀补全搜索词以提升配图精准度
+    search_name = cleaned
+    if single_city not in cleaned and not any(k in cleaned for k in ["澳门", "佛山", "顺德", "珠海", "广州"]):
+        search_name = f"{single_city}{cleaned}"
+
     # 限流：每次请求间隔至少 0.2s
     import time as _t
     elapsed = _t.time() - _last_fetch_time
     if elapsed < 0.2:
         _t.sleep(0.2 - elapsed)
     # 高德API（最多重试2次）
+    # 高德API（最多重试2次）
+    from utils.amap_api import _request
     for attempt in range(2):
         try:
-            kw = urllib.request.quote(name)
-            ct = urllib.request.quote(city)
+            kw = urllib.request.quote(search_name)
+            ct = urllib.request.quote(single_city)
             url = f"https://restapi.amap.com/v5/place/text?key={AMAP_KEY}&keywords={kw}&region={ct}&city_limit=true&page_size=1&show_fields=photos"
-            req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
+            data = _request(url)
             if data.get("status")=="1" and data.get("pois"):
                 photos = data["pois"][0].get("photos", [])
                 if photos:
@@ -45,26 +79,35 @@ def _fetch_photos(name, city="上海"):
                     break
         except:
             if attempt == 0:
-                _t.sleep(1)  # 重试前等1秒
+                _t.sleep(1.0)
             continue
     _last_fetch_time = _t.time()
     if not urls:
         # 降级：百度/Bing搜图
         try:
             from utils.image_fetcher import get_photos as _gp
-            urls = _gp(name, city)
+            urls = _gp(search_name, single_city)
         except:
             pass
     _photo_cache[name] = urls
     return urls
 
 
-def _fetch_photos_batch(names, city="上海", max_workers=4):
+def _fetch_photos_batch(poi_items, default_city="上海", max_workers=2):
     """批量并行获取POI照片"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     results = {}
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(_fetch_photos, n, city): n for n in names}
+        futures = {}
+        for item in poi_items:
+            if isinstance(item, tuple):
+                name, single_city = item
+            else:
+                name, single_city = item, default_city
+            # If single_city is empty, fallback to default_city
+            if not single_city:
+                single_city = default_city
+            futures[ex.submit(_fetch_photos, name, single_city)] = name
         for f in as_completed(futures):
             name = futures[f]
             try:
@@ -75,7 +118,7 @@ def _fetch_photos_batch(names, city="上海", max_workers=4):
 
 
 def _search_hotels(location, city="上海", radius=1500):
-    """高德搜索附近酒店(types=100000)，带限流"""
+    """高德搜索附近酒店(types=100000)，带限流与城市越界过滤"""
     global _last_fetch_time
     import time as _t
     elapsed = _t.time() - _last_fetch_time
@@ -83,19 +126,24 @@ def _search_hotels(location, city="上海", radius=1500):
         _t.sleep(0.2 - elapsed)
     try:
         loc = f"{location[0]},{location[1]}" if isinstance(location, (list,tuple)) else location
-        kw = urllib.request.quote(city)
-        url = f"https://restapi.amap.com/v5/place/around?key={AMAP_KEY}&location={loc}&radius={radius}&types=100000&sortrule=weight&page_size=5&show_fields=business,rating,cost,tel"
+        url = f"https://restapi.amap.com/v5/place/around?key={AMAP_KEY}&location={loc}&radius={radius}&types=100000&sortrule=weight&page_size=10&show_fields=business,rating,cost,tel"
         req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
         _last_fetch_time = _t.time()
         results = []
         for p in data.get("pois", []):
+            name = p.get("name", "")
+            address = p.get("address", "")
+            if city == "珠海" and any(x in name or x in address for x in ["澳门", "特别行政区", "Macau", "MACAU"]):
+                continue
+            if city == "广州" and any(x in name or x in address for x in ["佛山", "顺德"]):
+                continue
             biz = p.get("business", {})
             results.append({
-                "name": p["name"],
+                "name": name,
                 "location": p.get("location", ""),
-                "address": p.get("address", ""),
+                "address": address,
                 "rating": biz.get("rating", ""),
                 "cost": biz.get("cost", ""),
                 "tel": biz.get("tel", ""),
@@ -124,7 +172,7 @@ def _color_for(name, is_food):
 
 
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
-                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city=""):
+                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
     import datetime as _dt
     date_range_str = ""
@@ -153,31 +201,73 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
     total_km = 0
 
     # 预批量获取所有照片
-    all_poi_names = []
+    all_poi_items = []
     for day in itinerary:
         for poi in day.get("pois", []):
-            all_poi_names.append(poi["name"])
+            all_poi_items.append((poi["name"], poi.get("city", "")))
         for food in day.get("foods", []):
-            all_poi_names.append(food["name"])
-    photo_cache = _fetch_photos_batch(all_poi_names, city) if all_poi_names else {}
+            all_poi_items.append((food["name"], food.get("city", "")))
+    photo_cache = _fetch_photos_batch(all_poi_items, city) if all_poi_items else {}
 
     # 预批量搜索酒店
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
+    from utils.amap_api import AMapClient
+    amap = AMapClient()
     hotel_locations = []
+    dest_cities = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
+    
     for day in itinerary:
-        day_locs = [poi["location"] for poi in day.get("pois", []) if poi.get("location")]
+        stay_city = day.get("accommodation_city", "").strip()
+        # 自动兜底逻辑：如果LLM没有显式输出当晚住宿城市
+        if not stay_city:
+            if day["day"] in [1, 2] and len(dest_cities) >= 1:
+                stay_city = dest_cities[0]
+            elif day["day"] in [3, 4] and len(dest_cities) >= 3:
+                stay_city = dest_cities[2]
+            elif day["day"] < num_days and dest_cities:
+                stay_city = dest_cities[0]
+            else:
+                stay_city = ""
+                
+        if not stay_city:
+            hotel_locations.append((day["day"], None, ""))
+            continue
+            
+        city_center = amap.geocode(stay_city)
+        day_locs = []
+        for s in (day.get("pois", []) + day.get("foods", [])):
+            loc = s.get("location")
+            if loc and city_center:
+                dist = ((loc[0] - city_center[0])**2 + (loc[1] - city_center[1])**2)**0.5 * 111
+                if dist < 45:
+                    day_locs.append(loc)
+                    
+        # 若当天在该宿地城市无景点活动坐标，寻找其他天的同宿城景点坐标
+        if not day_locs:
+            for other_day in itinerary:
+                other_stay_city = other_day.get("accommodation_city", "").strip()
+                if other_stay_city == stay_city:
+                    for s in (other_day.get("pois", []) + other_day.get("foods", [])):
+                        loc = s.get("location")
+                        if loc and city_center:
+                            dist = ((loc[0] - city_center[0])**2 + (loc[1] - city_center[1])**2)**0.5 * 111
+                            if dist < 45:
+                                day_locs.append(loc)
+                    if day_locs:
+                        break
+                        
         if day_locs:
             clng = sum(l[0] for l in day_locs) / len(day_locs)
             clat = sum(l[1] for l in day_locs) / len(day_locs)
-            hotel_locations.append((day["day"], [clng, clat]))
+            hotel_locations.append((day["day"], [clng, clat], stay_city))
         else:
-            hotel_locations.append((day["day"], None))
+            hotel_locations.append((day["day"], city_center, stay_city))
 
     hotel_cache = {}
     def _search_one(args):
-        day_num, loc = args
-        if loc:
-            return day_num, _search_hotels(loc, city)
+        day_num, loc, s_city = args
+        if loc and s_city:
+            return day_num, _search_hotels(loc, s_city)
         return day_num, []
     with ThreadPoolExecutor(max_workers=3) as ex:
         for day_num, hotels in ex.map(_search_one, hotel_locations):
@@ -363,15 +453,29 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             budget_vals = [int(n) for n in nums if int(n) >= 100]
             if budget_vals:
                 val = max(budget_vals)
-                if '人均' in budget or '每人' in budget:
-                    if '天' in budget or '日' in budget:
+                is_daily = any(x in budget for x in ['天', '日', 'daily', '每天', '每日'])
+                is_per_person = any(x in budget for x in ['人均', '每人', '每人每天', '人均每天', '单人', '/人'])
+                specified_people = people_count
+                match_people = _re.search(r'(\d+|两|三|四|五|六)人', budget)
+                if match_people:
+                    p_word = match_people.group(1)
+                    if p_word == '两': specified_people = 2
+                    elif p_word == '三': specified_people = 3
+                    elif p_word == '四': specified_people = 4
+                    elif p_word.isdigit(): specified_people = int(p_word)
+                
+                if is_daily:
+                    if is_per_person:
                         daily = val
                     else:
-                        daily = val // max(days, 1)
+                        daily = val // max(specified_people, 1)
                 else:
-                    daily = val // (2 * max(days, 1))
+                    if is_per_person:
+                        daily = val // max(days, 1)
+                    else:
+                        daily = val // (max(specified_people, 1) * max(days, 1))
         daily = max(daily, 1)
-        total_budget = daily * days * 2
+        total_budget = daily * days * people_count
         accommodation_est = int(daily * 0.25)
         food_est = int(daily * 0.18)
         transport_est = int(daily * 0.12)
@@ -379,15 +483,15 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         shopping_est = daily - accommodation_est - food_est - transport_est - ticket_est
         budget_html = f"""
     <div class="sec bs">
-        <h2>💰 预算概览（{days}天 · 2人 · 约¥{daily}/天/人）</h2>
+        <h2>💰 预算概览（{days}天 · {people_count}人 · 约¥{daily}/天/人）</h2>
         <div class="bg">
-            <div class="bi"><div class="bn">🏨 住宿</div><div class="bv">¥{accommodation_est*days*2}</div><div class="bp">{(accommodation_est/daily*100):.0f}%</div><div class="bb" style="width:{(accommodation_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🎫 门票</div><div class="bv">¥{ticket_est*days*2}</div><div class="bp">{(ticket_est/daily*100):.0f}%</div><div class="bb" style="width:{(ticket_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🍽️ 餐饮</div><div class="bv">¥{food_est*days*2}</div><div class="bp">{(food_est/daily*100):.0f}%</div><div class="bb" style="width:{(food_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🚗 交通</div><div class="bv">¥{transport_est*days*2}</div><div class="bp">{(transport_est/daily*100):.0f}%</div><div class="bb" style="width:{(transport_est/daily*100):.0f}%"></div></div>
-            <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days*2}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🏨 住宿</div><div class="bv">¥{accommodation_est*days*people_count}</div><div class="bp">{(accommodation_est/daily*100):.0f}%</div><div class="bb" style="width:{(accommodation_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🎫 门票</div><div class="bv">¥{ticket_est*days*people_count}</div><div class="bp">{(ticket_est/daily*100):.0f}%</div><div class="bb" style="width:{(ticket_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🍽️ 餐饮</div><div class="bv">¥{food_est*days*people_count}</div><div class="bp">{(food_est/daily*100):.0f}%</div><div class="bb" style="width:{(food_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🚗 交通</div><div class="bv">¥{transport_est*days*people_count}</div><div class="bp">{(transport_est/daily*100):.0f}%</div><div class="bb" style="width:{(transport_est/daily*100):.0f}%"></div></div>
+            <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days*people_count}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
         </div>
-        <div class="bt">预算合计 ≈ ¥{total_budget}（{transport or '出行方式'} · 2人）</div>
+        <div class="bt">预算合计 ≈ ¥{total_budget}（{transport or '出行方式'} · {people_count}人）</div>
     </div>"""
 
     fh_html = ""
@@ -703,12 +807,12 @@ renderMap(1);
 
 
 def generate(city="上海", itinerary=None, food_highlights=None, overall_note="",
-             transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city=""):
+             transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2):
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
     html = generate_brochure(itinerary, city, food_highlights, overall_note,
-                            transport, accommodation, budget, preference, tips, weather, start_city)
+                            transport, accommodation, budget, preference, tips, weather, start_city, people_count)
     outputs_dir = os.path.join(BASE, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     import re

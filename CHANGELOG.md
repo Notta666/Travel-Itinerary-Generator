@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-06-29
+### Fixed
+- Cross-city geocoding drift and image mismatch in multi-city itineraries (e.g. Shunde Qinghui Garden matching to Guangzhou Asia International Hotel, Zhuhai Qinglulu matching to Guangzhou Love Hotel).
+
+### Added
+- Specific city extraction in Step 2 (XHS extraction) for both sights and foods.
+- Fast LLM city classification fallback in Step 3 (sights) and Step 4 (foods) for manual or default POIs to automatically map names to their destination cities before geocoding.
+
+### Changed
+- Step 3 and Step 4 geocoding logic to prioritize and restrict search boundaries to the exact target cities.
+
+## [1.2.0] - 2026-06-29
+### Added
+- 360 Image Search (`image.so.com` JSON API) integration as primary fallback in `utils/image_fetcher.py` for highly robust landmark/restaurant images.
+- Precise hotel selection logic: daily `accommodation_city` property in itinerary with coordinate filtering (45km radius) to avoid cross-city drift during transit days.
+- City-scoped geocoding: each activity slot has a specific city designation, prefixing queries (e.g. "珠海金悦轩...") to prevent drift in border regions (e.g., Macau vs. Zhuhai).
+
+### Changed
+- Refactored brochure builder and budget calculator to fully support dynamic `people_count` and total daily budget calculations (removed hardcoded `2` factor).
+- Enhanced fallback image cache to degrade gracefully using randomized beautiful CSS gradients when all image search engines fail.
+
 ## [1.1.0] - 2026-06-28
 ### Added
 - Web App (`webapp/main.py`): FastAPI web interface with Y2K-style UI, async task execution

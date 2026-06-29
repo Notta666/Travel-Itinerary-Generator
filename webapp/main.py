@@ -32,7 +32,7 @@ OUTPUTS_DIR = os.path.join(PROJECT, "outputs")
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
 
-def _run_pipeline_task(task_id, goal_text, enabled_steps=None):
+def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budget=None):
     """在后台线程中执行 pipeline"""
     try:
         from pipeline.run_pipeline import _parse_goal, run_pipeline
@@ -40,6 +40,18 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None):
 
         # 解析 goal
         city, days, pois, prefs = _parse_goal(goal_text)
+
+        # 覆盖为 Web UI 用户输入的人数和预算
+        ui_people = people if people is not None else 2
+        
+        if budget is not None:
+            ui_budget_str = f"共{budget}元"
+        else:
+            total_est = 1500 * ui_people * max(days or 2, 1)
+            ui_budget_str = f"共{total_est}元"
+            
+        prefs["people_count"] = ui_people
+        prefs["budget"] = ui_budget_str
 
         # 设置定制步骤列表
         if enabled_steps is not None:
@@ -89,12 +101,14 @@ async def generate(data: dict):
     """提交生成任务"""
     goal = (data.get("goal") or "").strip()
     enabled_steps = data.get("steps")  # 获取勾选的步骤列表
+    people = data.get("people")
+    budget = data.get("budget")
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
     task_id = uuid.uuid4().hex[:12]
     TASKS[task_id] = {"status": "pending", "goal": goal, "created": time.time()}
     # 在后台线程中执行（不阻塞HTTP响应）
-    thread = threading.Thread(target=_run_pipeline_task, args=(task_id, goal, enabled_steps), daemon=True)
+    thread = threading.Thread(target=_run_pipeline_task, args=(task_id, goal, enabled_steps, people, budget), daemon=True)
     thread.start()
     return {"task_id": task_id, "status": "pending"}
 
@@ -327,6 +341,54 @@ body {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.params-row {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+.param-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.param-item label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.param-item input {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.9);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+  outline: none;
+  transition: all 0.25s ease;
+}
+.param-item input::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+.param-item input:focus {
+  border-color: rgba(255, 36, 66, 0.4);
+  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.08);
+  background: #fff;
+}
+@media (max-width: 580px) {
+  .params-row {
+    flex-direction: column;
+    gap: 12px;
+  }
 }
 
 /* Examples */
@@ -673,6 +735,17 @@ body {
       <input id="goalInput" type="text" placeholder="输入目的地，例如「安吉周末自驾漂流」" onkeydown="if(event.key==='Enter')generate()">
       <button id="genBtn" onclick="generate()">规划行程 ✨</button>
     </div>
+    
+    <div class="params-row">
+      <div class="param-item">
+        <label for="peopleInput">👥 出行人数 (人)</label>
+        <input id="peopleInput" type="number" min="1" placeholder="默认 2 人">
+      </div>
+      <div class="param-item">
+        <label for="budgetInput">💰 总预算 (元)</label>
+        <input id="budgetInput" type="number" min="0" placeholder="默认按 1500/人/天计算">
+      </div>
+    </div>
 
     <!-- Pipeline 步骤定制 -->
     <div class="pipeline-customization">
@@ -916,6 +989,12 @@ async function generate(){
   void bar.offsetWidth; // 触发回流
   bar.style.animation='progress 120s linear forwards';
 
+  // 获取人数和总预算
+  var peopleVal = document.getElementById('peopleInput').value.trim();
+  var budgetVal = document.getElementById('budgetInput').value.trim();
+  var people = peopleVal ? parseInt(peopleVal, 10) : null;
+  var budget = budgetVal ? parseFloat(budgetVal) : null;
+
   // 获取定制启用的步骤
   var steps = [];
   if(document.getElementById('step_research').checked) steps.push('research');
@@ -927,7 +1006,7 @@ async function generate(){
     var resp=await fetch('/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({goal:goal, steps:steps})
+      body:JSON.stringify({goal:goal, steps:steps, people:people, budget:budget})
     });
     var data=await resp.json();
     var taskId=data.task_id;

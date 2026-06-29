@@ -23,6 +23,8 @@ def _fetch_json(url, timeout=8):
 import datetime as _dt
 
 def get_weather_for_dates(city="上海", start_date=None, days=2):
+    if isinstance(city, str) and "," in city:
+        city = city.split(",")[0]
     """
     获取指定日期的天气（支持未来3天内预报，超过3天返回历史平均数据）
     start_date: datetime.date 对象，或 YYYY-MM-DD 字符串，默认为今天
@@ -194,6 +196,8 @@ def get_weather_for_dates(city="上海", start_date=None, days=2):
 
 
 def get_weather(city="上海", extensions="all"):
+    if isinstance(city, str) and "," in city:
+        city = city.split(",")[0]
     """
     获取城市天气预报，自动通过地理编码解析adcode。
     extensions: 'base'=实况, 'all'=今明后三天预报

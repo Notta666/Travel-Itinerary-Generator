@@ -219,7 +219,7 @@ def step_2_research(context):
             for i, n in enumerate(note_contents)
         )
         extract_prompt = f"""你是一名旅行信息整理专家。从以下{city}的小红书笔记及用户真实评论中，提取所有提到的【景点】和【餐厅/美食】。
-特别注意：评论中往往包含真实的排队时长、避雷吐槽或极力推荐，请务必从正文和评论中提炼每个景点的“真实避雷点”与“赞点”。
+特别注意：评论中往往包含真实的排队时长、避雷吐槽或极力推荐，请务必从正文 and 评论中提炼每个景点的“真实避雷点”与“赞点”。
 
 要求：
 1. 景点包括：自然风光、地标建筑、公园、博物馆、古镇等
@@ -227,28 +227,47 @@ def step_2_research(context):
 3. 每个条目给出名称和简短描述（为什么值得去）
 4. 从评论和正文中搜集关于该景点的避雷吐槽（排队久、门票贵、虚假宣传等）和强烈推荐点，整理填入 complaints 和 highlights 中。如果没有则写“无”
 5. 按推荐热度排序，最多各取10个
+6. 【关键】请根据笔记内容或常识，判断该景点/餐厅【所属的具体城市名】（例如“广州”、“顺德”、“珠海”、“澳门”等），并在 JSON 中填入 "city" 字段。
 
 笔记与评论内容：
 {notes_text}
 
 输出格式（纯JSON，不要额外文字）：
-{{"sights": [{{"name":"名称","reason":"推荐理由","complaints":"避雷点/真实排队或踩雷吐槽","highlights":"绝美机位/赞点"}}], 
- "foods": [{{"name":"名称","reason":"推荐理由","cuisine":"菜系类型","complaints":"避雷点/口味吐槽","highlights":"必点菜/赞点"}}]}}"""
+{{"sights": [{{"name":"名称","city":"该景点所在的具体城市(如 广州/顺德/珠海/澳门等)","reason":"推荐理由","complaints":"避雷点/真实排队或踩雷吐槽","highlights":"绝美机位/赞点"}}], 
+ "foods": [{{"name":"名称","city":"该餐厅所在的具体城市(如 广州/顺德/珠海/澳门等)","reason":"推荐理由","cuisine":"菜系类型","complaints":"避雷点/口味吐槽","highlights":"必点菜/赞点"}}]}}"""
 
         try:
             result = call_deepseek("提取POI。返回纯JSON。", extract_prompt, temperature=0.1, max_tokens=3000)
             if isinstance(result, dict):
                 xhs_pois["sights"] = result.get("sights", [])
                 xhs_pois["foods"] = result.get("foods", [])
+                
+                # 保存景点与美食对应的具体城市映射
+                sight_city_map = {}
+                for s in xhs_pois["sights"]:
+                    if "name" in s and "city" in s:
+                        sight_city_map[s["name"]] = s["city"]
+                context["sight_city_map"] = sight_city_map
+
+                food_city_map = {}
+                for f in xhs_pois["foods"]:
+                    if "name" in f and "city" in f:
+                        food_city_map[f["name"]] = f["city"]
+                context["food_city_map"] = food_city_map
+
                 print(f"  🤖 LLM提取: {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
                 for s in xhs_pois["sights"][:3]:
-                    print(f"     🏛️ {s['name']} (避雷: {s.get('complaints','无')})")
+                    print(f"     🏛️ {s['name']} [{s.get('city','')}] (避雷: {s.get('complaints','无')})")
                 for f in xhs_pois["foods"][:3]:
-                    print(f"     🍴 {f['name']} (避雷: {f.get('complaints','无')})")
+                    print(f"     🍴 {f['name']} [{f.get('city','')}] (避雷: {f.get('complaints','无')})")
         except Exception as e:
             print(f"  ⚠️ LLM提取失败: {e}")
     else:
         print("  ⚠️ 未获取到小红书笔记内容")
+
+    # 默认值兜底
+    context.setdefault("sight_city_map", {})
+    context.setdefault("food_city_map", {})
 
     context["research_notes"] = all_notes
     context["note_contents"] = note_contents
@@ -284,32 +303,150 @@ def step_3_geocode(context, manual_pois=None):
         }
         pois_to_code = default_pois.get(city, default_pois["上海"])
 
-    # 批量并行地理编码
-    results = amap.geocode_batch(pois_to_code, city, max_workers=4)
-    
+    # 预先获取所有目的城市的中心点，用于漂移审计和智能匹配
+    cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
+
+    # 针对缺失城市归属信息的 POI 启动 LLM 快速识别
+    sight_city_map = context.setdefault("sight_city_map", {})
+    missing_pois = [n for n in pois_to_code if n not in sight_city_map]
+    if missing_pois and len(cities_list) > 1:
+        print(f"  🧠 检测到有 {len(missing_pois)} 个景点缺失城市归属信息，启动 LLM 快速识别...")
+        map_prompt = f"""你是一个旅行地理专家。
+请根据目的地城市列表 {cities_list}，判断以下景点名称分别属于哪一个目的地城市（必须只能是列表中的一个，如果景点不在任何一个城市，请选择最接近的目的城市）：
+景点列表：{missing_pois}
+
+输出格式（纯JSON，不要额外文字，键为景点名，值为对应的城市名）：
+{{
+  "景点1": "城市A",
+  "景点2": "城市B"
+}}"""
+        try:
+            from utils.llm import call_deepseek
+            map_res = call_deepseek("地理专家。返回纯JSON。", map_prompt, temperature=0.1, max_tokens=1000)
+            if isinstance(map_res, dict):
+                for k, v in map_res.items():
+                    if k in missing_pois and v in cities_list:
+                        sight_city_map[k] = v
+                print(f"     ✅ 识别完成: {map_res}")
+        except Exception as e:
+            print(f"     ⚠️ LLM 城市识别失败: {e}")
+
+    city_centers = []
+    for c in cities_list:
+        lookup_c = "佛山" if c == "顺德" else c
+        c_coord = amap.geocode(lookup_c)
+        if c_coord:
+            city_centers.append(c_coord)
+    if not city_centers:
+        city_centers = [(121.4737, 31.2304)]
+
+    # 智能前缀纠偏地理编码
+    results = {}
+    sight_city_map = context.get("sight_city_map", {})
+    def _smart_geocode(name):
+        spec_city = sight_city_map.get(name, "").strip()
+        if spec_city:
+            for suffix in ["市", "区", "县"]:
+                if spec_city.endswith(suffix) and len(spec_city) > 2:
+                    spec_city = spec_city[:-1]
+
+        # 整理候选城市列表：优先使用 Step 2 提取的特定城市
+        candidate_cities = []
+        if spec_city:
+            candidate_cities.append(spec_city)
+            if spec_city == "顺德":
+                candidate_cities.append("佛山")
+        for c in cities_list:
+            if c not in candidate_cities:
+                candidate_cities.append(c)
+                if c == "顺德" and "佛山" not in candidate_cities:
+                    candidate_cities.append("佛山")
+
+        # 1. 如果名字里已经有城市名，直接用
+        for c in candidate_cities:
+            if c in name:
+                coord = amap.geocode(name, c)
+                if coord:
+                    return name, coord
+                    
+        # 2. 如果名字里没有城市名，依次拼装城市名前缀尝试地理编码
+        for c in candidate_cities:
+            lookup_cities = [c]
+            if c == "顺德":
+                lookup_cities = ["顺德", "佛山"]
+                
+            for lc in lookup_cities:
+                q_name = f"{lc}{name}"
+                coord = amap.geocode(q_name, lc)
+                if coord:
+                    # 必须在这个城市中心 50km 范围内才算匹配成功
+                    c_coord = amap.geocode(lc)
+                    if c_coord:
+                        dist = abs(coord[0] - c_coord[0]) * 111 + abs(coord[1] - c_coord[1]) * 111
+                        if dist <= 50:
+                            return name, coord
+                            
+        # 3. 实在找不到，再全局地码
+        return name, amap.geocode(name)
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(_smart_geocode, n): n for n in pois_to_code}
+        for f in as_completed(futures):
+            try:
+                name, coord = f.result()
+                if coord:
+                    results[name] = coord
+            except:
+                pass
+
     geocoded = []
     for name in pois_to_code:
         coord = results.get(name)
+        
+        # 审计校验：检查坐标是否偏离所有目的城市超过 100km
+        is_drift = True
         if coord:
+            for cx, cy in city_centers:
+                dist = abs(coord[0] - cx) * 111 + abs(coord[1] - cy) * 111
+                if dist <= 100:  # 只要距离任意一个目的城市在 100km 内，即为合规
+                    is_drift = False
+                    break
+        
+        # 如果判定为偏离或失败，尝试用目的地城市群中的前缀重新地理编码纠偏
+        if (is_drift or not coord) and cities_list:
+            for c_prefix in cities_list[:3]:  # 最多试前三个城市
+                fallback_name = f"{c_prefix}{name}"
+                print(f"  ⚠️ 发现定位漂移或失败: '{name}'。尝试使用前缀 '{fallback_name}' 重新编码...")
+                fallback_coord = amap.geocode(fallback_name)
+                if fallback_coord:
+                    # 重新检验新坐标是否满足 100km 距离限制
+                    valid_fallback = False
+                    for cx, cy in city_centers:
+                        dist = abs(fallback_coord[0] - cx) * 111 + abs(fallback_coord[1] - cy) * 111
+                        if dist <= 100:
+                            valid_fallback = True
+                            break
+                    if valid_fallback:
+                        coord = fallback_coord
+                        is_drift = False
+                        print(f"  ✅ 纠偏成功: '{name}' 修正为 '{fallback_name}' → ({coord[0]:.4f}, {coord[1]:.4f})")
+                        break
+        
+        if coord and not is_drift:
             geocoded.append({"name": name, "location": coord})
             print(f"  ✅ {name:20s} → ({coord[0]:.4f}, {coord[1]:.4f})")
         else:
             # 降级 Mock 坐标方案
             h = hash(name)
-            city_center = amap.geocode(city)
-            if city_center:
-                base_lng, base_lat = city_center
-            else:
-                base_lng, base_lat = 121.4737, 31.2304
-                if city == "北京":
-                    base_lng, base_lat = 116.4074, 39.9042
-                elif city == "杭州":
-                    base_lng, base_lat = 120.1535, 30.2874
+            base_lng, base_lat = city_centers[0]
             offset_lng = ((h % 100) - 50) * 0.001
             offset_lat = (((h // 100) % 100) - 50) * 0.001
             coord = (base_lng + offset_lng, base_lat + offset_lat)
             geocoded.append({"name": name, "location": coord})
-            print(f"  ⚠️ {name:20s} → 编码失败，使用 Mock 坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
+            if is_drift:
+                print(f"  🚨 {name:20s} → 严重定位漂移且无法纠偏，降级为首个城市 Mock 邻近坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
+            else:
+                print(f"  ⚠️ {name:20s} → 编码失败，使用 Mock 坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
 
     context["poi_geocoded"] = geocoded
     n = len(geocoded)
@@ -329,9 +466,35 @@ def step_4_enrich(context):
     city = context["city"]
     all_food = []
 
-    # 1. 批量并行丰富景点POI信息
-    pois_to_enrich = [poi["name"] for poi in context["poi_geocoded"]]
-    enrich_results = amap.enrich_poi_batch(pois_to_enrich, city, max_workers=4)
+    # 1. 批量并行丰富景点POI信息（直接根据纠偏后的坐标做逆地理编码，防止重名导致拉取异地详情）
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    enrich_results = {}
+    
+    def _enrich_by_loc(poi):
+        name = poi["name"]
+        loc = poi["location"]
+        regeo = amap.reverse_geocode(loc, radius=500, extensions="base")
+        result = {
+            "name": name,
+            "location": loc,
+        }
+        if regeo:
+            ac = regeo.get("addressComponent", {})
+            result["address"] = regeo.get("formatted_address", "")
+            result["province"] = ac.get("province", "")
+            result["district"] = ac.get("district", "")
+            result["adcode"] = ac.get("adcode", "")
+        return name, result
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(_enrich_by_loc, poi): poi["name"] for poi in context["poi_geocoded"]}
+        for f in as_completed(futures):
+            name = futures[f]
+            try:
+                n, res = f.result()
+                enrich_results[n] = res
+            except Exception:
+                enrich_results[name] = None
 
     # 建立景点 complaints/highlights 映射
     sight_meta = {}
@@ -377,8 +540,90 @@ def step_4_enrich(context):
                 continue  # 超出预算，跳过
             foods_to_geocode.append(name)
             
-    # 批量编码美食
-    food_coords = amap.geocode_batch(foods_to_geocode, city, max_workers=4) if foods_to_geocode else {}
+    # 批量编码美食，结合特定所属城市进行精准检索与校准
+    food_coords = {}
+    if foods_to_geocode:
+        food_city_map = context.setdefault("food_city_map", {})
+        cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
+
+        # 针对缺失城市归属信息的美食启动 LLM 快速识别
+        missing_foods = [n for n in foods_to_geocode if n not in food_city_map]
+        if missing_foods and len(cities_list) > 1:
+            print(f"  🧠 检测到有 {len(missing_foods)} 家餐厅缺失城市归属信息，启动 LLM 快速识别...")
+            map_prompt = f"""你是一个旅行美食专家。
+请根据目的地城市列表 {cities_list}，判断以下餐厅名称分别属于哪一个目的地城市（必须只能是列表中的一个，如果餐厅不在任何一个城市，请选择最接近的目的城市）：
+餐厅列表：{missing_foods}
+
+输出格式（纯JSON，不要额外文字，键为餐厅名，值为对应的城市名）：
+{{
+  "餐厅1": "城市A",
+  "餐厅2": "城市B"
+}}"""
+            try:
+                from utils.llm import call_deepseek
+                map_res = call_deepseek("美食专家。返回纯JSON。", map_prompt, temperature=0.1, max_tokens=1000)
+                if isinstance(map_res, dict):
+                    for k, v in map_res.items():
+                        if k in missing_foods and v in cities_list:
+                            food_city_map[k] = v
+                    print(f"     ✅ 识别完成: {map_res}")
+            except Exception as e:
+                print(f"     ⚠️ LLM 城市识别失败: {e}")
+        
+        def _smart_geocode_food(name):
+            f_city = food_city_map.get(name, "").strip()
+            if f_city:
+                for suffix in ["市", "区", "县"]:
+                    if f_city.endswith(suffix) and len(f_city) > 2:
+                        f_city = f_city[:-1]
+            if f_city == "顺德":
+                f_city = "佛山"
+
+            # 整理候选城市列表：优先使用 Step 2 提取的美食特定城市
+            candidate_cities = []
+            if f_city:
+                candidate_cities.append(f_city)
+            for c in cities_list:
+                if c not in candidate_cities:
+                    candidate_cities.append(c)
+                    if c == "顺德" and "佛山" not in candidate_cities:
+                        candidate_cities.append("佛山")
+
+            # 1. 尝试直接以候选城市的前缀拼装进行地理编码
+            for c in candidate_cities:
+                q_name = f"{c}{name}" if c not in name else name
+                coord = amap.geocode(q_name, c)
+                if coord:
+                    # 必须在这个城市中心 50km 范围内才算匹配成功
+                    c_coord = amap.geocode(c)
+                    if c_coord:
+                        dist = abs(coord[0] - c_coord[0]) * 111 + abs(coord[1] - c_coord[1]) * 111
+                        if dist <= 50:
+                            return name, coord
+
+            # 2. 如果失败，使用 keywords 搜索 place_text 兜底限制在城市内
+            for c in candidate_cities:
+                try:
+                    pois = amap.place_text(keywords=name, region=c, city_limit=True, page_size=1)
+                    if pois:
+                        loc = pois[0]["location"]
+                        lng, lat = loc.split(",")
+                        return name, (float(lng), float(lat))
+                except:
+                    pass
+
+            # 3. 实在找不到，全局地码
+            return name, amap.geocode(name)
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futures = {ex.submit(_smart_geocode_food, n): n for n in foods_to_geocode}
+            for f in as_completed(futures):
+                try:
+                    name, coord = f.result()
+                    if coord:
+                        food_coords[name] = coord
+                except:
+                    pass
 
     for f in xhs_foods:
         name = f.get("name", "")
@@ -480,26 +725,47 @@ def step_6_plan_itinerary(context):
                              "distance_matrix_km": dist_matrix.get("matrix", []),
                              "labels": dist_matrix.get("labels", [])}, ensure_ascii=False, indent=2)
 
-    format_instruction = '输出JSON: {"days":[{"day":1,"label":"区域","summary":"","slots":[{"type":"sight/food","name":"名称","time":"时段","transit":"","note":"","cuisine":"","cost":"","rating":""}]}]}'
+    lodging_instruction = """
+【特别住宿与时间限制规则（必须严格遵守）】:
+1. 这是一次 5天4晚 的春节旅程（2026年2月18日~22日）。
+2. 第一天（2月18日）晚上机场落地广州后必须安排广州住宿（住广州第1晚）。
+3. 第二天（2月19日）游玩广州，晚上安排广州住宿（住广州第2晚，即广州共2晚，广州不安排其他过夜）。
+4. 第三天（2月20日）上午/下午游玩顺德，傍晚必须出发前往珠海，晚上落地珠海安顿并吃宵夜，安排珠海住宿（住珠海第1晚）。
+5. 第四天（2月21日）过关前往澳门游玩，当天晚上必须返回珠海入住（住珠海第2晚，即珠海共2晚，珠海不安排其他过夜）。
+6. 第五天（2月22日）游玩珠海，并在傍晚/晚上从珠海站搭乘动卧返回上海（即第五天所有活动、景点和返回交通的所在城市city必须为珠海，绝不能标注为广州）。第五天晚上绝不能安排任何在广州、珠海或澳门的住宿，晚上全部在动卧火车上度过。
+"""
+
+    format_instruction = '输出JSON: {"days":[{"day":1,"label":"区域","summary":"","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)","slots":[{"type":"sight/food","name":"名称","city":"该景点或餐厅所在的具体城市(如广州/佛山/珠海/澳门)","time":"时段","transit":"","note":"","cuisine":"","cost":"","rating":""}]}]}'
 
     # ---- Bull Prompt ----
-    bull_prompt = f"""你是一名高效派旅行规划师（Bull）。规划【景点+美食】一体的高效行程。
+    bull_prompt = f"""你是一名高效派旅行规划师（Bull）。根据用户要求的每日安排和交通动线，规划【景点+美食】一体的高效行程。
+【用户特别行程与动线要求】
+{context.get("goal", "无")}
+{lodging_instruction}
+
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
 要求：
-1. 每个景点配附近餐厅，时间合理。
-2. 结合赞点（highlights）和避雷吐槽（complaints），合理编排路线。
+1. 严格遵守【用户特别行程与动线要求】与【特别住宿与时间限制规则】（例如第几天在哪个城市、在哪里住宿、怎么往返等）。
+2. 每个景点配附近餐厅，时间合理。
+3. 结合赞点（highlights）和避雷吐槽（complaints），合理编排路线。
+4. 【餐饮推荐规则】：每天原则上必须推荐早、中、晚三顿正餐（早餐、午餐、晚餐，类型均为food，并在 time_slot 或 note 中标明），在正餐之间的空闲时段，可以穿插推荐当地特色小吃或甜点（如双皮奶、蛋挞、双皮奶等），并明确标注为小吃或甜点。
 {format_instruction}"""
 
     # ---- Bear Prompt ----
     bear_prompt = f"""你是一名品质悠闲派旅行规划师（Bear）。针对所有推荐的景点与美食，你需要根据用户评论中的避雷/吐槽进行品质把关。
+【用户特别行程与动线要求】
+{context.get("goal", "无")}
+{lodging_instruction}
+
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
 辩论与筛选要求：
-1. **【景点与美食辩论】**：针对每一个包含避雷/吐槽（complaints）的景点或餐厅进行评估。如果避雷点严重（例如：排队超过2小时、虚假宣传、口味难吃/宰客等），你必须在规划时**果断舍弃/替换**该地。
-2. 每天最多3-4个景点+2餐厅，每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。
+1. 严格遵守【用户特别行程与动线要求】与【特别住宿与时间限制规则】中的跨城交通、天数和住宿点分配。
+2. **【景点与美食辩论】**：针对每一个包含避雷/吐槽（complaints）的景点或餐厅进行评估。如果避雷点严重（例如：排队超过2小时、虚假宣传、口味难吃/宰客等），你必须在规划时**果断舍弃/替换**该地。
+3. 【餐饮推荐规则】：每天原则上必须包含早、中、晚三顿正餐（早餐、午餐、晚餐，类型为food），每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。在正餐之间的空余时段，可以合理安排推荐特色小吃或甜品（如双皮奶、蛋挞等），但必须标明为小吃/甜点，不要与正餐时间冲突。
 {format_instruction}"""
 
     try:
@@ -521,6 +787,9 @@ def step_6_plan_itinerary(context):
         # ---- Fusion Prompt ----
         fusion_prompt = f"""首席旅行规划官。综合两位分析师（高效派 Bull 与 悠闲避雷派 Bear）的辩论方案做出最终融合。
 
+【用户特别行程与动线要求】
+{context.get("goal", "无")}
+
 Bull高效方案: {json.dumps(bull_result, ensure_ascii=False)}
 Bear悠闲避雷方案: {json.dumps(bear_result, ensure_ascii=False)}
 
@@ -528,14 +797,16 @@ Bear悠闲避雷方案: {json.dumps(bear_result, ensure_ascii=False)}
 【原始餐厅与避雷/赞点数据】{food_json}
 
 裁决辩论原则：
-1. 评估 Bull 方案的路线效率和 Bear 方案针对避雷点的剔除理由。
-2. 如果某个景点或餐厅在小红书评论中吐槽严重（如虚假宣传、性价比极低），采纳 Bear 的建议，予以替换或在 note 中加入特别警示。
-3. 在最终输出的 `overall_note` 中，必须包含一段 **【景点与美食辩论纪要】**：列出对于争议景点（如“雷峰塔是否值得登塔”、“某网红店是否排队踩雷”）分析师们的不同看法以及你的最终裁决理由。
+1. 必须完全符合【用户特别行程与动线要求】（例如：各天所在的城市定位、第几天吃夜宵、住宿地点、飞机出发与动卧返回等）。
+2. 评估 Bull 方案的路线效率和 Bear 方案针对避雷点的剔除理由。
+3. 如果某个景点或餐厅在小红书评论中吐槽严重（如虚假宣传、性价比极低），采纳 Bear 的建议，予以替换或在 note 中加入特别警示。
+4. 在最终输出的 `overall_note` 中，必须包含一段 **【景点与美食辩论纪要】**：列出对于争议景点分析师们的不同看法以及你的最终裁决理由。
+5. 必须严格落实【一日三餐+小吃甜点】规则：最终方案里，每一天原则上都要推荐早餐、午餐、晚餐三顿正餐（标注在时段或note中），其它闲暇时段（下午或夜间）可穿插推荐特色小吃/甜品/夜宵，不能遗漏正餐。
 
 输出JSON:
-{{"days":[{{"day":1,"label":"主题","summary":"概要",
-    "slots":[{{"type":"sight","name":"","time_slot":"","transit":"","note":"游览贴士/避雷提醒"}},
-             {{"type":"food","name":"","time_slot":"","cuisine":"","cost":"","rating":"","note":"推荐菜/避雷吐槽"}}]}}],
+{{"days":[{{"day":1,"label":"主题","summary":"概要","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)",
+    "slots":[{{"type":"sight","name":"","city":"该景点所在的具体城市(如广州/佛山/珠海/澳门)","time_slot":"","transit":"","note":"游览贴士/避雷提醒"}},
+             {{"type":"food","name":"","city":"该餐厅所在的具体城市(如广州/佛山/珠海/澳门)","time_slot":"","cuisine":"","cost":"","rating":"","note":"推荐菜/避雷吐槽"}}]}}],
   "overall_note":"【景点与美食辩论纪要】... \\n【总体行程说明】...",
   "food_highlights":["必吃1","必吃2"]}}"""
 
@@ -608,52 +879,62 @@ Bear悠闲避雷方案: {json.dumps(bear_result, ensure_ascii=False)}
                 lng, lat = nf_loc.split(",")
                 food_coord_map[nf["name"]] = [float(lng), float(lat)]
 
-    # 城市中心坐标（用于验证合理性）
-    city_center_coord = amap.geocode(city)
-    if city_center_coord:
-        city_center = list(city_center_coord)
-    else:
-        city_center = [120.0, 30.0]  # 默认华东
-        if "安吉" in city or "杭州" in city or "浙江" in city:
-            city_center = [119.6, 30.5]
-        elif "上海" in city:
-            city_center = [121.47, 31.23]
-        elif "北京" in city:
-            city_center = [116.4, 39.9]
-        elif "广州" in city or "深圳" in city or "广东" in city:
-            city_center = [113.3, 23.1]
-        elif "成都" in city or "四川" in city:
-            city_center = [104.1, 30.6]
+    # 城市中心坐标（用于验证合理性，支持多城）
+    cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
+    city_centers = []
+    for c in cities_list:
+        c_coord = amap.geocode(c)
+        if c_coord:
+            city_centers.append(list(c_coord))
+    if not city_centers:
+        city_centers = [[121.47, 31.23]]
 
     itinerary = []
     for d in days_out:
         day_pois, day_foods = [], []
+        
+        # 先收集当天所有景点的坐标，用于餐厅坐标失败或偏离时的就近 fallback
+        day_sight_coords = []
+        for s in d.get("slots", []):
+            if s.get("type", "sight") != "food":
+                for ep in pois:
+                    if ep["name"] == s["name"]:
+                        day_sight_coords.append(ep["location"])
+                        break
+        fallback_coord = day_sight_coords[0] if day_sight_coords else city_centers[0]
+
         for s in d.get("slots", []):
             s_type = s.get("type", "sight")
             name = s["name"]
+            slot_city = s.get("city", "").strip()
+            
             matched = None
             if s_type == "food":
                 if name in food_coord_map:
                     matched = {"location": food_coord_map[name]}
-                else:
-                    try:
-                        coord = amap.geocode(name, city)
-                        if coord:
-                            _dist = abs(coord[0]-city_center[0])*111 + abs(coord[1]-city_center[1])*111
-                            if _dist < 100:
-                                matched = {"location": list(coord)}
-                            else:
-                                print(f"     ⚠️ {name}坐标偏离({coord[0]:.2f},{coord[1]:.2f}),跳过")
-                    except:
-                        pass
             else:
                 for ep in pois:
                     if ep["name"] == name:
                         matched = ep
                         break
+                        
+            if not matched:
+                try:
+                    q_city = slot_city or (cities_list[0] if cities_list else "")
+                    q_name = f"{q_city}{name}" if q_city and q_city not in name else name
+                    coord = amap.geocode(q_name, q_city)
+                    if coord:
+                        c_coord = amap.geocode(q_city)
+                        if c_coord:
+                            _dist = abs(coord[0]-c_coord[0])*111 + abs(coord[1]-c_coord[1])*111
+                            if _dist < 50:
+                                matched = {"location": list(coord)}
+                except:
+                    pass
+                    
             entry = {
                 "name": name,
-                "location": matched["location"] if matched else [121.47, 31.23],
+                "location": matched["location"] if matched else list(fallback_coord),
                 "address": s.get("address","") or (matched.get("address","") if matched else ""),
                 "rating": s.get("rating","") or (matched.get("rating","") if matched else ""),
                 "cost": s.get("cost","") or (matched.get("cost","") if matched else ""),
@@ -661,16 +942,19 @@ Bear悠闲避雷方案: {json.dumps(bear_result, ensure_ascii=False)}
                 "transit": s.get("transit",""),
                 "note": s.get("note",""),
                 "type": s_type,
+                "city": slot_city,
             }
             if s_type == "food":
                 entry["cuisine"] = s.get("cuisine", "")
                 day_foods.append(entry)
             else:
                 day_pois.append(entry)
+                
         itinerary.append({
             "day": d.get("day", len(itinerary)+1),
             "label": d.get("label", f"Day {len(itinerary)+1}"),
             "summary": d.get("summary", ""),
+            "accommodation_city": d.get("accommodation_city", ""),
             "pois": day_pois, "foods": day_foods,
         })
 
@@ -841,7 +1125,8 @@ def step_9_deliver(context):
                           budget=prefs.get("budget", ""),
                           preference=prefs.get("preference", ""),
                           tips=tips, weather=wx,
-                          start_city=prefs.get("start_city", ""))
+                          start_city=prefs.get("start_city", ""),
+                          people_count=prefs.get("people_count", 2))
             context["brochure_path"] = path
             print(f"  📖 手册: {path}")
         except Exception as e:
@@ -981,7 +1266,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None)
 # ====================================================================
 # Goal Parser: 自然语言 → 结构化参数
 # ====================================================================
-def _parse_budget(budget_str, days=2):
+def _parse_budget(budget_str, days=2, people_count=2):
     """解析预算字符串，返回(每人每天预算, 总预算)"""
     if not budget_str:
         return (None, None)
@@ -994,15 +1279,36 @@ def _parse_budget(budget_str, days=2):
     if not budget_vals:
         return (None, None)
     total = max(budget_vals)
-    if '人均' in budget_str or '每人' in budget_str:
-        if '天' in budget_str or '日' in budget_str:
+
+    is_daily = any(x in budget_str for x in ['天', '日', 'daily', '每天', '每日'])
+    is_per_person = any(x in budget_str for x in ['人均', '每人', '每人每天', '人均每天', '单人', '/人'])
+
+    specified_people = people_count
+    match_people = re.search(r'(\d+|两|三|四|五|六)人', budget_str)
+    if match_people:
+        p_word = match_people.group(1)
+        if p_word == '两':
+            specified_people = 2
+        elif p_word == '三':
+            specified_people = 3
+        elif p_word == '四':
+            specified_people = 4
+        elif p_word.isdigit():
+            specified_people = int(p_word)
+
+    if is_daily:
+        if is_per_person:
             daily_per_person = total
         else:
+            daily_per_person = total // max(specified_people, 1)
+    else:
+        if is_per_person:
             daily_per_person = total // max(days, 1)
-        return (max(daily_per_person, 1), daily_per_person * max(days, 1) * 2)
-    # 默认视为总预算
-    daily_per_person = total // (2 * max(days, 1))
-    return (max(daily_per_person, 1), daily_per_person * max(days, 1) * 2)
+        else:
+            daily_per_person = total // (max(specified_people, 1) * max(days, 1))
+
+    total_trip_budget = daily_per_person * max(days, 1) * people_count
+    return (max(daily_per_person, 1), total_trip_budget)
 
 
 def _parse_goal(goal_text):
@@ -1024,11 +1330,12 @@ def _parse_goal(goal_text):
 - budget: 预算描述。如果用户没给，默认"两人共3000/天（含住宿/交通/饮食/门票）"
 - preference: 偏好描述(如"亲子","情侣","美食","休闲"),空字符串表示无特殊偏好。
 - accommodation: 住宿区域或酒店名，根据行程路线推荐顺路区域，少绕路。如果没给，根据行程路线推荐合适区域.
+- people_count: 提取出行人数。例如“我们四个人” -> 4，“三口之家” -> 3。如果未明示，默认输出 2。
 
 【当前季节】6月底夏季，推荐避暑/玩水/室内景点。
 
 输出纯JSON，严格按以下格式，不要多余文字：
-{{"city":"城市名","start_city":"出发城市","days":2,"start_date":"YYYY-MM-DD","pois":["景点1","景点2"],"transport":"方式","budget":"描述","preference":"描述","accommodation":"描述"}}"""
+{{"city":"城市名","start_city":"出发城市","days":2,"start_date":"YYYY-MM-DD","pois":["景点1","景点2"],"transport":"方式","budget":"描述","preference":"描述","accommodation":"描述","people_count":2}}"""
 
     try:
         from utils.llm import call_deepseek
@@ -1043,11 +1350,13 @@ def _parse_goal(goal_text):
             preference = result.get("preference", "")
             accommodation = result.get("accommodation", "")
             start_date = result.get("start_date", "")
+            people_count = int(result.get("people_count", 2))
             print(f"\n🎯 目标解析结果:")
             print(f"   出发城市: {start_city or '未指定(将通过IP定位)'}")
             print(f"   目的地: {city}")
             print(f"   出行日期: {start_date}")
             print(f"   天数: {days}")
+            print(f"   人数: {people_count} 人")
             print(f"   交通: {transport or '未指定'}")
             print(f"   预算: {budget or '不限'}")
             print(f"   偏好: {preference or '无'}")
@@ -1060,7 +1369,8 @@ def _parse_goal(goal_text):
                 "accommodation": accommodation,
                 "start_date": start_date,
                 "start_city": start_city,
-                "_budget_parsed": _parse_budget(budget, days),
+                "people_count": people_count,
+                "_budget_parsed": _parse_budget(budget, days, people_count),
             }
     except Exception as e:
         print(f"  ⚠️ 目标解析失败: {e}，使用默认参数")

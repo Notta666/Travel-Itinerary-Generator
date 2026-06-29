@@ -55,6 +55,28 @@ def _gaode(name, city="上海"):
             time.sleep(1)
     return []
 
+def _so(name, limit=2):
+    try:
+        q = urllib.request.quote(name)
+        url = f"https://image.so.com/j?q={q}&src=srp&sn=0&pn=10"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://image.so.com/"
+        })
+        with urllib.request.urlopen(req, timeout=8) as r:
+            res = json.loads(r.read().decode("utf-8", errors="replace"))
+        list_data = res.get("list", [])
+        urls = []
+        for item in list_data:
+            u = item.get("img") or item.get("thumb")
+            if u and str(u).startswith("http"):
+                urls.append(u)
+                if len(urls) >= limit:
+                    break
+        return urls
+    except:
+        return []
+
 def _baidu(name, limit=2):
     try:
         q = urllib.request.quote(name)
@@ -78,7 +100,7 @@ def _baidu(name, limit=2):
 def _bing(name, limit=2):
     try:
         q = urllib.request.quote(name)
-        req = urllib.request.Request(f"https://cn.bing.com/images/search?q={q}", headers={
+        req = urllib.request.Request(f"https://www.bing.com/images/search?q={q}", headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         })
         with urllib.request.urlopen(req, timeout=8) as r:
@@ -87,20 +109,39 @@ def _bing(name, limit=2):
         for m in re.finditer(r'class="iusc"[^>]*?m="({.*?})"', html):
             if len(urls) >= limit: break
             try:
-                d = json.loads(m.group(1).replace("&quot;", '"'))
+                m_str = m.group(1).replace("&quot;", '"').replace("&amp;", "&")
+                d = json.loads(m_str)
                 u = d.get("murl", "")
                 if u.startswith("http"): urls.append(u)
             except: continue
+        if not urls:
+            murls = re.findall(r'"murl"\s*:\s*"([^"]+)"', html)
+            for u in murls:
+                if u.startswith("http"):
+                    urls.append(u)
+                    if len(urls) >= limit: break
         return urls
     except:
         return []
 
+def _clean_name(name):
+    import re
+    # 移除括号及其中的分店信息，如（聚福楼店）或(大良店)
+    return re.sub(r'[\uff08(].*?[\uff09)]', '', name).strip()
+
 def get_photos(name, city="上海"):
-    """高德→百度→Bing 三级降级，7天缓存"""
+    """高德→360图片→百度→Bing 降级，7天缓存"""
     cached = _load_cache(name)
     if cached is not None:
         return cached
-    urls = _gaode(name, city) or _baidu(name) or _bing(name)
+
+    cleaned = _clean_name(name)
+    search_name = f"{city}{cleaned}" if city and city not in cleaned else cleaned
+
+    urls = _gaode(name, city) or _so(search_name) or _baidu(search_name) or _bing(search_name)
+    if not urls and cleaned != name:
+        urls = _so(cleaned) or _baidu(cleaned) or _bing(cleaned)
+
     _save_cache(name, urls)
     return urls
 

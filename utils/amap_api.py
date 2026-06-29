@@ -88,14 +88,24 @@ def get_city_adcode(city_name):
 # ---- HTTP 请求封装 ----
 def _request(url, timeout=10):
     """发起 GET 请求, 返回解析后的 JSON. 捕获异常以提升稳定性"""
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        # 记录 warning 而不是使整个 pipeline 崩溃
-        print(f"⚠️ 高德地图 API 请求失败: {e} | URL: {url.split('?')[0]}")
-        return {}
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") == "0":
+                info = data.get("info", "")
+                if "LIMIT" in info or "QPS" in info or "OVER_LIMIT" in info:
+                    time.sleep(1.5)
+                    continue
+            return data
+        except Exception as e:
+            if attempt == 2:
+                # 记录 warning 而不是使整个 pipeline 崩溃
+                print(f"⚠️ 高德地图 API 请求失败: {e} | URL: {url.split('?')[0]}")
+                return {}
+            time.sleep(1.0)
+    return {}
 
 def _build_url(endpoint, key=None, **params):
     """构造高德 API URL, 自动注入 key 并 URL 编码参数"""
@@ -123,6 +133,8 @@ class AMapClient:
         """
         地理编码: 地址 → 坐标，带城市偏差检测+POI搜索兜底
         """
+        if city == "顺德":
+            city = "佛山"
         city_centers = {"安吉": (119.6, 30.5), "杭州": (120.15, 30.28),
                         "上海": (121.47, 31.23), "北京": (116.4, 39.9)}
         expected_center = None
@@ -136,12 +148,18 @@ class AMapClient:
         for attempt in range(2):
             self._rate_limit()
             params = {"address": address, "output": "JSON"}
-            if city:
+            if city and "," not in city:
                 params["city"] = city
             url = _build_url("/v3/geocode/geo", key=self.key, **params)
             data = _request(url)
             if data.get("status") == "1" and data.get("geocodes"):
-                loc = data["geocodes"][0]["location"]
+                g = data["geocodes"][0]
+                level = g.get("level", "")
+                # 如果返回的级别是省、市、区、县，但查询的又不是城市本身，说明是高德因找不到而回退到了市中心，需要拒掉
+                if level in ["省", "市", "区", "县", "区县", "国家", "开发区"]:
+                    if address not in ["广州", "佛山", "顺德", "珠海", "澳门", "东莞", "深圳", "中山", "江门", "上海", "北京", "杭州"]:
+                        continue
+                loc = g["location"]
                 lng, lat = loc.split(",")
                 coord = (float(lng), float(lat))
                 # 检查偏差
@@ -213,12 +231,14 @@ class AMapClient:
         返回: POI 列表
         """
         self._rate_limit()
+        if region == "顺德":
+            region = "佛山"
         params = {"page_size": page_size, "page_num": page_num, "output": "JSON"}
         if keywords:
             params["keywords"] = keywords
         if types:
             params["types"] = types
-        if region:
+        if region and "," not in region:
             params["region"] = region
             if city_limit:
                 params["city_limit"] = "true"
