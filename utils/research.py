@@ -105,6 +105,37 @@ class XiaoHongShu:
         """搜索城市行程规划"""
         return self.search(f"{city}{days}日游攻略", limit=limit)
 
+    def get_comments(self, note_url, limit=10):
+        """获取小红书笔记评论（使用 YAML 格式解析）"""
+        if not _OPENCLI:
+            return []
+        if not self.connected:
+            return []
+        try:
+            r = subprocess.run(
+                [_OPENCLI, "xiaohongshu", "comments", note_url, "-f", "yaml", "--limit", str(limit)],
+                capture_output=True, text=True, timeout=20
+            )
+            output = r.stdout.strip()
+            if not output:
+                return []
+            
+            # YAML格式首列也是 `- rank:`，可以直接复用 _parse_yaml_results 解析器
+            raw_comments = self._parse_yaml_results(output)
+            # 兼容 `text` 键
+            parsed = []
+            for rc in raw_comments:
+                parsed.append({
+                    "author": rc.get("author", "匿名"),
+                    "text": rc.get("text", rc.get("title", "")), # title 或 text 字段
+                    "likes": int(rc.get("likes", 0)) if rc.get("likes") else 0
+                })
+            return parsed
+        except Exception as e:
+            print(f"⚠️ 获取小红书评论失败: {e}")
+            return []
+
+
     def _parse_yaml_results(self, yaml_text):
         """解析 opencli 返回的 YAML 格式结果"""
         notes = []

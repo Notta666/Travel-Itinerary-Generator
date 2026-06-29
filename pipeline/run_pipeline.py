@@ -175,39 +175,65 @@ def step_2_research(context):
             unique_notes.append(n)
     all_notes = unique_notes[:10]
 
-    # 精读前 5 篇笔记
+    # 并行精读前 5 篇笔记并抓取其评论
     if all_notes:
-        print(f"  📖 精读 {min(5, len(all_notes))} 篇笔记...")
-        for n in all_notes[:5]:
-            url = n.get("url", "")
-            if url:
-                content = xhs.read_note_content(url)
-                if content:
-                    note_contents.append(content)
-                    print(f"     ✅ {n.get('title','')[:30]}")
-            time.sleep(0.5)
+        print(f"  📖 并行精读 {min(5, len(all_notes))} 篇笔记与精彩评论...")
+        active_notes = all_notes[:5]
+        
+        def _fetch_note_and_comments(note):
+            url = note.get("url", "")
+            if not url:
+                return None
+            content = xhs.read_note_content(url)
+            if not content:
+                return None
+            # 并行抓取评论
+            comments = xhs.get_comments(url, limit=5)
+            if comments:
+                c_lines = []
+                for c in comments:
+                    txt = c.get("text", "").strip()
+                    if txt:
+                        c_lines.append(f"    - {c.get('author','匿名')}: {txt} (👍{c.get('likes',0)})")
+                if c_lines:
+                    content["content"] += "\n【精彩评论与用户避雷反馈】:\n" + "\n".join(c_lines)
+            return content
 
-    # LLM提取结构化景点+美食
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futures = [ex.submit(_fetch_note_and_comments, note) for note in active_notes]
+            for f in futures:
+                try:
+                    res = f.result()
+                    if res:
+                        note_contents.append(res)
+                        title = next((an.get("title", "") for an in active_notes if an.get("url") == res.get("url")), "")
+                        print(f"     ✅ {title[:30]}")
+                except Exception as e:
+                    pass
+
+    # LLM提取结构化景点+美食（含避雷/赞点）
     xhs_pois = {"sights": [], "foods": []}
     if note_contents:
         notes_text = "\n\n".join(
-            f"【笔记{i+1}】\n{n.get('content','')[:2000]}"
+            f"【笔记{i+1}】\n{n.get('content','')[:2500]}"
             for i, n in enumerate(note_contents)
         )
-        extract_prompt = f"""你是一名旅行信息整理专家。从以下{city}的小红书笔记中，提取所有提到的【景点】和【餐厅/美食】。
+        extract_prompt = f"""你是一名旅行信息整理专家。从以下{city}的小红书笔记及用户真实评论中，提取所有提到的【景点】和【餐厅/美食】。
+特别注意：评论中往往包含真实的排队时长、避雷吐槽或极力推荐，请务必从正文和评论中提炼每个景点的“真实避雷点”与“赞点”。
 
 要求：
 1. 景点包括：自然风光、地标建筑、公园、博物馆、古镇等
 2. 餐厅包括：餐馆、小吃店、咖啡馆、茶室等
 3. 每个条目给出名称和简短描述（为什么值得去）
-4. 优先提取笔记中反复提及的高频推荐
+4. 从评论和正文中搜集关于该景点的避雷吐槽（排队久、门票贵、虚假宣传等）和强烈推荐点，整理填入 complaints 和 highlights 中。如果没有则写“无”
 5. 按推荐热度排序，最多各取10个
 
-笔记内容：
+笔记与评论内容：
 {notes_text}
 
 输出格式（纯JSON，不要额外文字）：
-{{"sights": [{{"name":"名称","reason":"推荐理由"}}], "foods": [{{"name":"名称","reason":"推荐理由","cuisine":"菜系类型"}}]}}"""
+{{"sights": [{{"name":"名称","reason":"推荐理由","complaints":"避雷点/真实排队或踩雷吐槽","highlights":"绝美机位/赞点"}}], 
+ "foods": [{{"name":"名称","reason":"推荐理由","cuisine":"菜系类型","complaints":"避雷点/口味吐槽","highlights":"必点菜/赞点"}}]}}"""
 
         try:
             result = call_deepseek("提取POI。返回纯JSON。", extract_prompt, temperature=0.1, max_tokens=3000)
@@ -216,9 +242,9 @@ def step_2_research(context):
                 xhs_pois["foods"] = result.get("foods", [])
                 print(f"  🤖 LLM提取: {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
                 for s in xhs_pois["sights"][:3]:
-                    print(f"     🏛️ {s['name']}")
+                    print(f"     🏛️ {s['name']} (避雷: {s.get('complaints','无')})")
                 for f in xhs_pois["foods"][:3]:
-                    print(f"     🍴 {f['name']} — {f.get('cuisine','')}")
+                    print(f"     🍴 {f['name']} (避雷: {f.get('complaints','无')})")
         except Exception as e:
             print(f"  ⚠️ LLM提取失败: {e}")
     else:
@@ -307,6 +333,15 @@ def step_4_enrich(context):
     pois_to_enrich = [poi["name"] for poi in context["poi_geocoded"]]
     enrich_results = amap.enrich_poi_batch(pois_to_enrich, city, max_workers=4)
 
+    # 建立景点 complaints/highlights 映射
+    sight_meta = {}
+    xhs_sights = context.get("xhs_pois", {}).get("sights", [])
+    for s in xhs_sights:
+        sight_meta[s["name"]] = {
+            "complaints": s.get("complaints", "无"),
+            "highlights": s.get("highlights", "无")
+        }
+
     for poi in context["poi_geocoded"]:
         name = poi["name"]
         loc = poi["location"]
@@ -317,6 +352,8 @@ def step_4_enrich(context):
             "address": detail.get("address", "") if detail else "",
             "district": detail.get("district", "") if detail else "",
             "nearby_food": [],
+            "complaints": sight_meta.get(name, {}).get("complaints", "无"),
+            "highlights": sight_meta.get(name, {}).get("highlights", "无")
         }
         enriched.append(poi_info)
         print(f"  ✅ {name:20s} | {poi_info.get('address','')[:30]}")
@@ -353,6 +390,8 @@ def step_4_enrich(context):
                 "reason": f.get("reason", ""),
                 "rating": "",
                 "location": list(coord) if coord else [121.47, 31.23],
+                "complaints": f.get("complaints", "无"),
+                "highlights": f.get("highlights", "无")
             })
             
     if all_food:
@@ -423,18 +462,19 @@ def step_6_plan_itinerary(context):
     pois_data = []
     for p in pois:
         loc = p["location"]
-        food_nearby = p.get("nearby_food", [])
         pois_data.append({
             "name": p["name"],
             "lng": loc[0], "lat": loc[1],
             "address": p.get("address", ""),
             "district": p.get("district", ""),
-            "nearby_food": [{"name": f["name"], "rating": f.get("rating",""), "cost": f.get("cost",""),
-                             "tag": f.get("tag",""), "distance": f.get("distance",0)} for f in food_nearby[:3]],
+            "complaints": p.get("complaints", "无"),
+            "highlights": p.get("highlights", "无")
         })
 
     food_json = json.dumps([{"name": f["name"], "rating": f.get("rating",""), "cost": f.get("cost",""),
-                             "tag": f.get("tag",""), "address": f.get("address","")} for f in food_list],
+                             "tag": f.get("tag",""), "address": f.get("address",""),
+                             "complaints": f.get("complaints", "无"),
+                             "highlights": f.get("highlights", "无")} for f in food_list],
                            ensure_ascii=False, indent=2)
     input_json = json.dumps({"city": city, "days": days, "pois": pois_data,
                              "distance_matrix_km": dist_matrix.get("matrix", []),
@@ -443,17 +483,23 @@ def step_6_plan_itinerary(context):
     format_instruction = '输出JSON: {"days":[{"day":1,"label":"区域","summary":"","slots":[{"type":"sight/food","name":"名称","time":"时段","transit":"","note":"","cuisine":"","cost":"","rating":""}]}]}'
 
     # ---- Bull Prompt ----
-    bull_prompt = f"""你是一名旅行规划师（Bull — 高效派）。规划【景点+美食】一体的高效行程。
-【景点数据】{input_json}
-【城市推荐餐厅】{food_json}
-要求：每个景点配附近餐厅，时间标注sight/food
+    bull_prompt = f"""你是一名高效派旅行规划师（Bull）。规划【景点+美食】一体的高效行程。
+【景点数据（含真实用户避雷/赞点）】{input_json}
+【城市推荐餐厅（含避雷/赞点）】{food_json}
+
+要求：
+1. 每个景点配附近餐厅，时间合理。
+2. 结合赞点（highlights）和避雷吐槽（complaints），合理编排路线。
 {format_instruction}"""
 
     # ---- Bear Prompt ----
-    bear_prompt = f"""你是一名旅行规划师（Bear — 悠闲派）。规划【景点+美食】一体品质行程。
-【景点数据】{input_json}
-【城市推荐餐厅】{food_json}
-要求：每天最多4景点+2餐厅，每餐≥60分钟，推荐评分≥4.0
+    bear_prompt = f"""你是一名品质悠闲派旅行规划师（Bear）。针对所有推荐的景点与美食，你需要根据用户评论中的避雷/吐槽进行品质把关。
+【景点数据（含真实用户避雷/赞点）】{input_json}
+【城市推荐餐厅（含避雷/赞点）】{food_json}
+
+辩论与筛选要求：
+1. **【景点与美食辩论】**：针对每一个包含避雷/吐槽（complaints）的景点或餐厅进行评估。如果避雷点严重（例如：排队超过2小时、虚假宣传、口味难吃/宰客等），你必须在规划时**果断舍弃/替换**该地。
+2. 每天最多3-4个景点+2餐厅，每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。
 {format_instruction}"""
 
     try:
@@ -473,25 +519,25 @@ def step_6_plan_itinerary(context):
         print(f"  🐂 Bull → {len(bull_result.get('days',[]) or [])} 天 | 🐻 Bear → {len(bear_result.get('days',[]) or [])} 天")
 
         # ---- Fusion Prompt ----
-        fusion_prompt = f"""首席旅行规划官。综合两位分析师方案做出最终融合。
+        fusion_prompt = f"""首席旅行规划官。综合两位分析师（高效派 Bull 与 悠闲避雷派 Bear）的辩论方案做出最终融合。
 
-Bull方案: {json.dumps(bull_result, ensure_ascii=False)}
-Bear方案: {json.dumps(bear_result, ensure_ascii=False)}
+Bull高效方案: {json.dumps(bull_result, ensure_ascii=False)}
+Bear悠闲避雷方案: {json.dumps(bear_result, ensure_ascii=False)}
 
-【原始数据】{input_json}
-【餐厅】{food_json}
+【原始景点与避雷/赞点数据】{input_json}
+【原始餐厅与避雷/赞点数据】{food_json}
 
-裁决原则：
-1. 采纳Bull路线效率 + Bear用餐体验
-2. 景点和餐厅交替安排，每天≥1次正餐推荐
-3. 标注餐厅菜系、人均
-4. 每天≤4景点+2餐厅
+裁决辩论原则：
+1. 评估 Bull 方案的路线效率和 Bear 方案针对避雷点的剔除理由。
+2. 如果某个景点或餐厅在小红书评论中吐槽严重（如虚假宣传、性价比极低），采纳 Bear 的建议，予以替换或在 note 中加入特别警示。
+3. 在最终输出的 `overall_note` 中，必须包含一段 **【景点与美食辩论纪要】**：列出对于争议景点（如“雷峰塔是否值得登塔”、“某网红店是否排队踩雷”）分析师们的不同看法以及你的最终裁决理由。
 
 输出JSON:
 {{"days":[{{"day":1,"label":"主题","summary":"概要",
-    "slots":[{{"type":"sight","name":"","time_slot":"","transit":"","note":""}},
-             {{"type":"food","name":"","time_slot":"","cuisine":"","cost":"","rating":"","note":""}}]}}],
-  "overall_note":"","food_highlights":["必吃1","必吃2"]}}"""
+    "slots":[{{"type":"sight","name":"","time_slot":"","transit":"","note":"游览贴士/避雷提醒"}},
+             {{"type":"food","name":"","time_slot":"","cuisine":"","cost":"","rating":"","note":"推荐菜/避雷吐槽"}}]}}],
+  "overall_note":"【景点与美食辩论纪要】... \\n【总体行程说明】...",
+  "food_highlights":["必吃1","必吃2"]}}"""
 
         print("  ⚖️ Fusion 综合裁决中...")
         fusion_result = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=4000)
