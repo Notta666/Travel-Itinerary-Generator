@@ -24,11 +24,11 @@ def _fetch_photos(name, city="上海"):
     if name in _photo_cache:
         return _photo_cache[name]
     urls = []
-    # 限流：每次请求间隔至少 0.5s
+    # 限流：每次请求间隔至少 0.2s
     import time as _t
     elapsed = _t.time() - _last_fetch_time
-    if elapsed < 0.5:
-        _t.sleep(0.5 - elapsed)
+    if elapsed < 0.2:
+        _t.sleep(0.2 - elapsed)
     # 高德API（最多重试2次）
     for attempt in range(2):
         try:
@@ -59,13 +59,28 @@ def _fetch_photos(name, city="上海"):
     return urls
 
 
+def _fetch_photos_batch(names, city="上海", max_workers=4):
+    """批量并行获取POI照片"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_fetch_photos, n, city): n for n in names}
+        for f in as_completed(futures):
+            name = futures[f]
+            try:
+                results[name] = f.result()
+            except Exception:
+                results[name] = []
+    return results
+
+
 def _search_hotels(location, city="上海", radius=1500):
     """高德搜索附近酒店(types=100000)，带限流"""
     global _last_fetch_time
     import time as _t
     elapsed = _t.time() - _last_fetch_time
-    if elapsed < 0.5:
-        _t.sleep(0.5 - elapsed)
+    if elapsed < 0.2:
+        _t.sleep(0.2 - elapsed)
     try:
         loc = f"{location[0]},{location[1]}" if isinstance(location, (list,tuple)) else location
         kw = urllib.request.quote(city)
@@ -137,23 +152,50 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
     all_hotels_data = []  # 存储所有酒店数据供 JS 使用
     total_km = 0
 
+    # 预批量获取所有照片
+    all_poi_names = []
+    for day in itinerary:
+        for poi in day.get("pois", []):
+            all_poi_names.append(poi["name"])
+        for food in day.get("foods", []):
+            all_poi_names.append(food["name"])
+    photo_cache = _fetch_photos_batch(all_poi_names, city) if all_poi_names else {}
+
+    # 预批量搜索酒店
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    hotel_locations = []
+    for day in itinerary:
+        day_locs = [poi["location"] for poi in day.get("pois", []) if poi.get("location")]
+        if day_locs:
+            clng = sum(l[0] for l in day_locs) / len(day_locs)
+            clat = sum(l[1] for l in day_locs) / len(day_locs)
+            hotel_locations.append((day["day"], [clng, clat]))
+        else:
+            hotel_locations.append((day["day"], None))
+
+    hotel_cache = {}
+    def _search_one(args):
+        day_num, loc = args
+        if loc:
+            return day_num, _search_hotels(loc, city)
+        return day_num, []
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        for day_num, hotels in ex.map(_search_one, hotel_locations):
+            hotel_cache[day_num] = hotels
+
     for di, day in enumerate(itinerary):
         slots = []
         day_locations = []
         for poi in day.get("pois", []):
-            photos = _fetch_photos(poi["name"], city)
+            photos = photo_cache.get(poi["name"], [])
             slots.append({"type":"sight","data":poi,"photos":photos})
             if poi.get("location"): day_locations.append(poi["location"])
         for food in day.get("foods", []):
-            photos = _fetch_photos(food["name"], city)
+            photos = photo_cache.get(food["name"], [])
             slots.append({"type":"food","data":food,"photos":photos})
 
-        # 每天搜酒店
-        hotels = []
-        if day_locations:
-            clng = sum(l[0] for l in day_locations) / len(day_locations)
-            clat = sum(l[1] for l in day_locations) / len(day_locations)
-            hotels = _search_hotels([clng, clat], city)
+        # 使用预搜索的酒店缓存
+        hotels = hotel_cache.get(day["day"], [])
         if hotels:
             day_num = day["day"]
             hc = ""

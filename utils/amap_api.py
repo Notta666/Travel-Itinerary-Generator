@@ -14,7 +14,7 @@
     result = client.geocode("上海外滩")
 """
 
-import urllib.request, urllib.parse, json, os, time
+import urllib.request, urllib.parse, json, os, time, threading
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -109,13 +109,15 @@ class AMapClient:
     def __init__(self, key=None):
         self.key = key or AMAP_KEY
         self._last_call = 0
+        self._lock = threading.Lock()
 
     def _rate_limit(self, min_interval=0.3):
-        """简单限流, 防止触发 QPS 限制"""
-        elapsed = time.time() - self._last_call
-        if elapsed < min_interval:
-            time.sleep(min_interval - elapsed)
-        self._last_call = time.time()
+        """线程安全限流, 防止触发 QPS 限制"""
+        with self._lock:
+            elapsed = time.time() - self._last_call
+            if elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
+            self._last_call = time.time()
 
     def geocode(self, address, city=""):
         """
@@ -164,6 +166,22 @@ class AMapClient:
                 print(f"⚠️ POI搜索兜底失败: {e}")
 
         return coord
+
+    def geocode_batch(self, names, city="", max_workers=3):
+        """批量并行地理编码"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        def _geocode_one(name):
+            return name, self.geocode(name, city)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(_geocode_one, n): n for n in names}
+            for f in as_completed(futures):
+                try:
+                    name, coord = f.result()
+                    results[name] = coord
+                except Exception:
+                    results[futures[f]] = None
+        return results
 
     def reverse_geocode(self, location, radius=1000, extensions="base"):
         """
@@ -376,6 +394,51 @@ class AMapClient:
                 matrix[j][i] = {"distance": dist, "duration": dur}
             matrix[i][i] = {"distance": 0, "duration": 0}
         return {"matrix": matrix, "labels": labels}
+
+    def distance_matrix_parallel(self, pois, strategy=0, max_workers=4):
+        """并行计算 POI 间驾车距离矩阵"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        n = len(pois)
+        matrix = [[None]*n for _ in range(n)]
+        labels = [p[0] for p in pois]
+        coords = [(p[1], p[2]) for p in pois]
+        pairs = [(i, j) for i in range(n) for j in range(i+1, n)]
+
+        def _calc_pair(pair):
+            i, j = pair
+            r = self.direction_driving(coords[i], coords[j], strategy)
+            dist = r["distance"] if r else None
+            dur = r["duration"] if r else None
+            return i, j, dist, dur
+
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [ex.submit(_calc_pair, p) for p in pairs]
+            for f in as_completed(futures):
+                try:
+                    i, j, dist, dur = f.result()
+                    matrix[i][j] = {"distance": dist, "duration": dur}
+                    matrix[j][i] = {"distance": dist, "duration": dur}
+                except Exception:
+                    pass
+        for i in range(n):
+            matrix[i][i] = {"distance": 0, "duration": 0}
+        return {"matrix": matrix, "labels": labels}
+
+    def enrich_poi_batch(self, poi_names, city="", max_workers=4):
+        """批量并行POI数据丰富"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(self.enrich_poi, name, city): name for name in poi_names}
+            for f in as_completed(futures):
+                name = futures[f]
+                try:
+                    results[name] = f.result()
+                except Exception:
+                    results[name] = None
+        return results
+
+
     def get_ip_location(self):
         """
         通过 IP 定位获取用户当前所在城市

@@ -35,6 +35,7 @@ class XiaoHongShu:
     """小红书搜索工具 (依赖 OpenCLI + Chrome)"""
 
     def __init__(self):
+        self.connected = False
         self._check_opencli()
 
     def _check_opencli(self):
@@ -43,9 +44,11 @@ class XiaoHongShu:
             print("⚠️  OpenCLI 未安装或未在 PATH 中，小红书搜索将不可用")
             return
         try:
-            r = subprocess.run([_OPENCLI, "doctor"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run([_OPENCLI, "doctor"], capture_output=True, text=True, timeout=5)
             if "Extension: not connected" in r.stdout or "FAIL" in r.stdout:
-                print("⚠️  OpenCLI 扩展未连接, 小红书搜索可能不可用")
+                print("⚠️  OpenCLI 扩展未连接, 小红书搜索不可用")
+            else:
+                self.connected = True
         except FileNotFoundError:
             print("⚠️  OpenCLI 未安装, 小红书搜索不可用")
         except Exception as e:
@@ -61,6 +64,9 @@ class XiaoHongShu:
         """
         if not _OPENCLI:
             print("⚠️  OpenCLI 未安装，跳过小红书搜索")
+            return []
+        if not self.connected:
+            print("⚠️  OpenCLI 扩展未连接/不可用，跳过小红书搜索以节省时间")
             return []
         
         # 净化查询，防止命令注入与越权参数传递

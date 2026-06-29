@@ -9,7 +9,7 @@ Usage:
 步骤列表（9步工序链）:
 """
 
-import sys, os, json, argparse, time, copy, threading
+import sys, os, json, argparse, time, copy, threading, signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +27,76 @@ BROCHURE_ENABLED = True  # 生成图文手册
 
 amap = AMapClient()
 xhs = XiaoHongShu()
+
+
+# ====================================================================
+# 性能计时器 + 停止控制
+# ====================================================================
+_stop_requested = False
+_step_timings = []  # [(step_name, elapsed_seconds), ...]
+
+
+class StepTimer:
+    """上下文管理器：自动计时每个步骤并记录耗时"""
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+    def __exit__(self, *_):
+        elapsed = time.time() - self.t0
+        _step_timings.append((self.name, elapsed))
+        print(f"  ⏱️  {self.name} 耗时: {elapsed:.1f}s")
+
+
+class PipelineStoppedError(Exception):
+    """用户确认停止时抛出"""
+    pass
+
+
+def _check_stop(step_name=""):
+    """每步执行前检查是否需要停止"""
+    global _stop_requested
+    if _stop_requested:
+        raise PipelineStoppedError(f"用户在 {step_name} 前确认停止")
+
+
+def _signal_handler(signum, frame):
+    """Ctrl+C 信号处理器：二次确认交互"""
+    global _stop_requested
+    print(f"\n\n{'='*50}")
+    print("⚠️  检测到中断请求！")
+    print(f"{'='*50}")
+    try:
+        answer = input("确认要停止生成吗？已完成的步骤将保留。(y/n): ").strip().lower()
+        if answer in ('y', 'yes', '是'):
+            _stop_requested = True
+            print("🛑 已确认停止，正在保存已有成果...")
+        else:
+            print("▶️  继续生成中...")
+    except (EOFError, KeyboardInterrupt):
+        # 连续两次 Ctrl+C 直接停止
+        _stop_requested = True
+        print("\n🛑 强制停止")
+
+
+def _print_timing_summary():
+    """打印各步骤耗时汇总表"""
+    if not _step_timings:
+        return
+    total = sum(t for _, t in _step_timings)
+    print(f"\n{'='*55}")
+    print(f"⏱️  各步骤耗时汇总")
+    print(f"{'='*55}")
+    print(f"{'步骤':<25s} {'耗时':>8s} {'占比':>6s}")
+    print(f"{'-'*25} {'-'*8} {'-'*6}")
+    for name, elapsed in _step_timings:
+        pct = elapsed / total * 100 if total > 0 else 0
+        bar = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
+        print(f"  {name:<23s} {elapsed:>6.1f}s {pct:>5.1f}%  {bar}")
+    print(f"{'-'*25} {'-'*8} {'-'*6}")
+    print(f"  {'总计':<23s} {total:>6.1f}s  100%")
+    print(f"{'='*55}")
 
 
 # ====================================================================
@@ -168,9 +238,9 @@ def step_2_research(context):
 # Step 3: POI地理编码（小红书景点 → 高德坐标）
 # ====================================================================
 def step_3_geocode(context, manual_pois=None):
-    """高德地理编码: 小红书提取的景点名 → 坐标"""
+    """高德地理编码: 小红书提取的景点名 → 坐标 (批量并行)"""
     print(f"\n{'='*50}")
-    print(f"Step 3/9: POI地理编码 🗺️")
+    print(f"Step 3/9: POI地理编码 🗺️ (批量并行)")
     print(f"{'='*50}")
     city = context["city"]
 
@@ -188,9 +258,12 @@ def step_3_geocode(context, manual_pois=None):
         }
         pois_to_code = default_pois.get(city, default_pois["上海"])
 
+    # 批量并行地理编码
+    results = amap.geocode_batch(pois_to_code, city, max_workers=4)
+    
     geocoded = []
     for name in pois_to_code:
-        coord = amap.geocode(name, city)
+        coord = results.get(name)
         if coord:
             geocoded.append({"name": name, "location": coord})
             print(f"  ✅ {name:20s} → ({coord[0]:.4f}, {coord[1]:.4f})")
@@ -211,7 +284,6 @@ def step_3_geocode(context, manual_pois=None):
             coord = (base_lng + offset_lng, base_lat + offset_lat)
             geocoded.append({"name": name, "location": coord})
             print(f"  ⚠️ {name:20s} → 编码失败，使用 Mock 坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
-        time.sleep(0.3)
 
     context["poi_geocoded"] = geocoded
     n = len(geocoded)
@@ -223,54 +295,66 @@ def step_3_geocode(context, manual_pois=None):
 # Step 4: POI数据丰富 + 美食对接（小红书→高德验证）
 # ====================================================================
 def step_4_enrich(context):
-    """逆地理编码拿地址 → 小红书美食列表对接高德坐标验证"""
+    """逆地理编码拿地址 → 小红书美食列表对接高德坐标验证 (批量并行)"""
     print(f"\n{'='*50}")
-    print(f"Step 4/9: POI丰富 + 美食对接 🍽️（小红书→高德验证）")
+    print(f"Step 4/9: POI丰富 + 美食对接 🍽️ (批量并行)")
     print(f"{'='*50}")
     enriched = []
     city = context["city"]
     all_food = []
 
+    # 1. 批量并行丰富景点POI信息
+    pois_to_enrich = [poi["name"] for poi in context["poi_geocoded"]]
+    enrich_results = amap.enrich_poi_batch(pois_to_enrich, city, max_workers=4)
+
     for poi in context["poi_geocoded"]:
+        name = poi["name"]
         loc = poi["location"]
-        detail = amap.enrich_poi(poi["name"], city)
+        detail = enrich_results.get(name)
         poi_info = {
-            "name": poi["name"],
+            "name": name,
             "location": list(loc),
             "address": detail.get("address", "") if detail else "",
             "district": detail.get("district", "") if detail else "",
-            "nearby_food": [],  # 不再搜索附近餐厅，来源替换为小红书
+            "nearby_food": [],
         }
         enriched.append(poi_info)
-        print(f"  ✅ {poi['name']:20s} | {poi_info.get('address','')[:30]}")
-        time.sleep(0.3)
+        print(f"  ✅ {name:20s} | {poi_info.get('address','')[:30]}")
 
-    # 从小红书数据提取美食（高德验证坐标）
+    # 2. 过滤并批量并行验证美食坐标
     xhs_foods = context.get("xhs_food_data", [])
     prefs = context.get("preferences", {})
+    
+    foods_to_geocode = []
     for f in xhs_foods:
         name = f.get("name", "")
-        if name and name not in [x["name"] for x in all_food]:
+        if name and name not in foods_to_geocode:
             # 预算过滤
             budget_per = prefs.get("_budget_parsed", (None, None))
             daily_budget = budget_per[0]
-            # 估算餐厅人均（无数据时按菜系估算）
             cuisines_price = {"小吃": 20, "面": 25, "咖啡": 30, "快餐": 35,
                            "川菜": 60, "湘菜": 55, "粤菜": 80, "杭帮": 70, "本帮": 65,
                            "日料": 120, "西餐": 150, "火锅": 100, "烧烤": 80}
             est_cost = cuisines_price.get(f.get("cuisine", "")[:2], 50)
             if daily_budget and est_cost > daily_budget * 1.5:
                 continue  # 超出预算，跳过
+            foods_to_geocode.append(name)
+            
+    # 批量编码美食
+    food_coords = amap.geocode_batch(foods_to_geocode, city, max_workers=4) if foods_to_geocode else {}
 
-            # 尝试高德验证坐标
-            coord = amap.geocode(name, city)
+    for f in xhs_foods:
+        name = f.get("name", "")
+        if name in foods_to_geocode:
+            coord = food_coords.get(name)
             all_food.append({
                 "name": name,
                 "cuisine": f.get("cuisine", ""),
                 "reason": f.get("reason", ""),
-                "rating": "",  # 小红书不直接提供评分
+                "rating": "",
                 "location": list(coord) if coord else [121.47, 31.23],
             })
+            
     if all_food:
         print(f"  🍴 小红书推荐美食: {len(all_food)} 家")
         for f in all_food[:5]:
@@ -297,7 +381,11 @@ def step_5_distance_matrix(context):
         print("  ⚠️ POI不足, 跳过")
         return context
     tuples = [(p["name"], p["location"][0], p["location"][1]) for p in pois]
-    matrix = amap.distance_matrix(tuples)
+    # 使用并行版本（如果可用），否则降级到串行
+    if hasattr(amap, 'distance_matrix_parallel'):
+        matrix = amap.distance_matrix_parallel(tuples, max_workers=4)
+    else:
+        matrix = amap.distance_matrix(tuples)
     context["distance_matrix"] = matrix
     labels, mat = matrix["labels"], matrix["matrix"]
     print(f"  矩阵: {len(labels)}x{len(labels)}")
@@ -726,34 +814,121 @@ def step_9_deliver(context):
 # Entry Point
 # ====================================================================
 def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None):
+    global _stop_requested, _step_timings
+    _stop_requested = False
+    _step_timings = []
+    pipeline_t0 = time.time()
+
+    # 注册 Ctrl+C 信号处理器（二次确认）
+    original_handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, _signal_handler)
+
     if not prefs:
         prefs = {}
-    
-    start_city = prefs.get("start_city", "")
-    if not start_city:
-        print("🔍 检测到未指定出发地，正在获取您的实时位置...")
-        start_city = amap.get_ip_location()
-        if start_city:
-            print(f"📍 成功获取您的实时位置为起点: {start_city}")
+
+    try:
+        start_city = prefs.get("start_city", "")
+        if not start_city:
+            print("🔍 检测到未指定出发地，正在获取您的实时位置...")
+            start_city = amap.get_ip_location()
+            if start_city:
+                print(f"📍 成功获取您的实时位置为起点: {start_city}")
+            else:
+                print("⚠️ 实时位置获取失败，默认不设置起点")
+                start_city = ""
+            prefs["start_city"] = start_city
+
+        # 获取定制启用的步骤列表，默认全开启
+        enabled_steps = prefs.get("enabled_steps", ["research", "enrich", "distance", "tips"])
+
+        _check_stop("Step 1")
+        with StepTimer("Step 1 初始化"):
+            context = step_1_init(city, days, preferences=prefs, manual_pois=manual_pois)
+
+        _check_stop("Step 2")
+        if "research" in enabled_steps:
+            with StepTimer("Step 2 小红书调研"):
+                context = step_2_research(context)
         else:
-            print("⚠️ 实时位置获取失败，默认不设置起点")
-            start_city = ""
-        prefs["start_city"] = start_city
+            print("⏭️  跳过 Step 2 小红书调研 (用户配置禁用)")
+            context["research_notes"] = []
+            context["note_contents"] = []
+            context["xhs_pois"] = {"sights": [], "foods": []}
+            context["xhs_sight_names"] = []
+            context["xhs_food_data"] = []
 
-    context = step_1_init(city, days, preferences=prefs, manual_pois=manual_pois)
-    context = step_2_research(context)
-    context = step_3_geocode(context, manual_pois)
+        _check_stop("Step 3")
+        with StepTimer("Step 3 POI地理编码"):
+            context = step_3_geocode(context, manual_pois)
 
-    # Step 4+5 串行（共享context，不能并行）
-    context = step_4_enrich(context)
-    context = step_5_distance_matrix(context)
+        _check_stop("Step 4")
+        if "enrich" in enabled_steps:
+            with StepTimer("Step 4 POI丰富+美食"):
+                context = step_4_enrich(context)
+        else:
+            print("⏭️  跳过 Step 4 POI丰富+美食 (用户配置禁用)")
+            # 降级：直接将 step_3_geocode 的坐标和名称放到 enriched 中
+            enriched = []
+            for poi in context["poi_geocoded"]:
+                enriched.append({
+                    "name": poi["name"],
+                    "location": list(poi["location"]),
+                    "address": "",
+                    "district": "",
+                    "nearby_food": []
+                })
+            context["poi_enriched"] = enriched
+            context["food_recommendations"] = []
 
-    # Step 6: Bull+Bear 并行调用（各自独立API请求）
-    context = step_6_plan_itinerary(context)
-    context = step_7_render_html(context)
-    context = step_8_generate_report(context)
-    context = step_85_tips(context)
-    context = step_9_deliver(context)
+        _check_stop("Step 5")
+        if "distance" in enabled_steps:
+            with StepTimer("Step 5 距离矩阵"):
+                context = step_5_distance_matrix(context)
+        else:
+            print("⏭️  跳过 Step 5 距离矩阵 (用户配置禁用)")
+            context["distance_matrix"] = {"matrix": [], "labels": []}
+
+        _check_stop("Step 6")
+        with StepTimer("Step 6 对抗辩论规划"):
+            context = step_6_plan_itinerary(context)
+
+        _check_stop("Step 7")
+        context = step_7_render_html(context)
+
+        # Step 8 + Step 8.5 并行/串行执行
+        _check_stop("Step 8")
+        if "tips" in enabled_steps:
+            with StepTimer("Step 8+8.5 报告+建议"):
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    f8 = ex.submit(step_8_generate_report, copy.deepcopy(context))
+                    f85 = ex.submit(step_85_tips, copy.deepcopy(context))
+                    ctx8 = f8.result()
+                    ctx85 = f85.result()
+                # 合并两个并行步骤的输出
+                context["report_path"] = ctx8.get("report_path")
+                context["travel_tips"] = ctx85.get("travel_tips", {})
+                context["weather"] = ctx85.get("weather", {})
+        else:
+            with StepTimer("Step 8 报告"):
+                context = step_8_generate_report(context)
+                context["travel_tips"] = {}
+                context["weather"] = {}
+
+        _check_stop("Step 9")
+        with StepTimer("Step 9 图文手册"):
+            context = step_9_deliver(context)
+
+    except PipelineStoppedError as e:
+        print(f"\n🛑 Pipeline 已停止: {e}")
+        print("  已完成的步骤成果已保留。")
+    finally:
+        # 恢复原始信号处理器
+        signal.signal(signal.SIGINT, original_handler)
+        # 打印耗时汇总
+        total_elapsed = time.time() - pipeline_t0
+        print(f"\n⏱️  Pipeline 总耗时: {total_elapsed:.1f}s")
+        _print_timing_summary()
+
     return context
 
 

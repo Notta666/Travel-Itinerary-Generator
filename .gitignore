@@ -26,6 +26,13 @@ env/
 outputs/*
 !outputs/.gitkeep
 
+# Data caches and references
+data/cache/*
+data/image_cache/*
+data/user_prefs.json
+data/references/amap_poicode.zip
+data/references/amap_poicode/
+
 # System & OS files
 .DS_Store
 Thumbs.db

@@ -20,7 +20,7 @@ def generate_tips(city="上海", days=2, transport="", preference="", budget="",
     month, season_desc = _season()
     season_name = month.split("(")[0] if "(" in month else month
 
-    prompt = f"""你是一个出行安全与旅行贴士专家。根据以下信息生成实用建议。
+    prompt = f"""你是一个出行安全、旅行贴士与拍照穿搭专家。根据以下信息生成实用建议。
 
 【起点/出发城市】{start_city or '未指定'}
 【目的地】{city}
@@ -30,11 +30,13 @@ def generate_tips(city="上海", days=2, transport="", preference="", budget="",
 【用户偏好】{preference or '无特殊偏好'}
 【预算】{budget or '不限'}
 
-【通用建议要求】
+【通用建议与拍照穿搭要求】
 1. 基于{city}的{city}气候特点给出针对性建议
-2. 如果交通方式是自驾，给出出发时间建议避开高峰；如果起点与目的地距离较远，给出合适的出行路线、时间与交通工具对比建议。
-3. 列出必备物品清单（身份证、充电宝、防晒等）
-4. 给出{season_name}的着装和防护建议
+2. 列出必备物品清单（身份证、充电宝、防晒等）
+3. 给出{season_name}的着装和防护建议。
+4. **【拍照打卡与穿搭要求】**：在 "preference_tips" 或 "general" 中，必须包含：
+   - 至少一条【📷 绝美拍照打卡机位】：结合{city}热门景点的具体取景位置和拍照角度（例如：“云上草原彩虹滑道起点往下20米处，俯拍最出片”）。
+   - 至少一条【👗 视觉出片穿搭指南】：针对该季节与风景，推荐适合拍照的衣服颜色与搭配风格（例如：“建议穿着亮黄色或纯白连衣裙，在绿色森林背景下对比度极佳”）。
 
 【偏好专项建议要求】
 如果是"{preference}"，请专门针对该活动给出准备建议：
@@ -52,7 +54,7 @@ def generate_tips(city="上海", days=2, transport="", preference="", budget="",
 输出纯JSON，严格按以下格式：
 {{{{
   "general": ["建议1","建议2","建议3","建议4","建议5"],
-  "preference_tips": ["偏好建议1","偏好建议2","偏好建议3"],
+  "preference_tips": ["偏好/拍照/穿搭建议1","偏好/拍照/穿搭建议2","偏好/拍照/穿搭建议3"],
   "daily_tips": ["Day1提醒","Day2提醒"],
   "emergency": "极端天气应急方案"
 }}}}"""

@@ -32,7 +32,7 @@ OUTPUTS_DIR = os.path.join(PROJECT, "outputs")
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
 
-def _run_pipeline_task(task_id, goal_text):
+def _run_pipeline_task(task_id, goal_text, enabled_steps=None):
     """在后台线程中执行 pipeline"""
     try:
         from pipeline.run_pipeline import _parse_goal, run_pipeline
@@ -41,7 +41,11 @@ def _run_pipeline_task(task_id, goal_text):
         # 解析 goal
         city, days, pois, prefs = _parse_goal(goal_text)
 
-        # 运行 pipeline（会调用 DeepSeek + 高德API，耗时 2-5 分钟）
+        # 设置定制步骤列表
+        if enabled_steps is not None:
+            prefs["enabled_steps"] = enabled_steps
+
+        # 运行 pipeline（会调用 DeepSeek + 高德API）
         context = run_pipeline(city, days, manual_pois=pois, prefs=prefs)
 
         # 收集结果
@@ -84,12 +88,13 @@ async def index():
 async def generate(data: dict):
     """提交生成任务"""
     goal = (data.get("goal") or "").strip()
+    enabled_steps = data.get("steps")  # 获取勾选的步骤列表
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
     task_id = uuid.uuid4().hex[:12]
     TASKS[task_id] = {"status": "pending", "goal": goal, "created": time.time()}
     # 在后台线程中执行（不阻塞HTTP响应）
-    thread = threading.Thread(target=_run_pipeline_task, args=(task_id, goal), daemon=True)
+    thread = threading.Thread(target=_run_pipeline_task, args=(task_id, goal, enabled_steps), daemon=True)
     thread.start()
     return {"task_id": task_id, "status": "pending"}
 
@@ -146,165 +151,500 @@ INDEX_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
-<title>AI旅行攻略 · 一键生成</title>
+<title>AI 智能随心游 · 一键规划行程</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{
-  font-family:'Noto Sans SC','Inter',sans-serif;
-  background:linear-gradient(135deg,#d4fc79 0%,#96e6a1 50%,#84fab0 100%);
-  min-height:100vh;display:flex;flex-direction:column;align-items:center;
-  padding:40px 20px 60px;
-  background-attachment:fixed;
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Noto Sans SC', 'Inter', sans-serif;
+  background: linear-gradient(135deg, #FFF5F5 0%, #F5F3FF 50%, #EBF3FF 100%);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+  background-attachment: fixed;
+  color: #2c3e50;
 }
-.wrapper{
-  width:100%;max-width:520px;
-  transition:max-width .3s;
+.wrapper {
+  width: 100%;
+  max-width: 580px;
+  transition: all .3s ease;
 }
-@media(min-width:768px){
-  body{padding:60px 40px 80px;}
-  .wrapper{max-width:640px;}
+@media (min-width: 768px) {
+  body { padding: 60px 40px 80px; }
+  .wrapper { max-width: 720px; }
 }
 
 /* Header */
-.header{text-align:center;margin-bottom:24px;position:relative;}
-.badges{display:flex;justify-content:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
-.badge{
-  padding:4px 12px;border-radius:50px;font-size:11px;font-weight:700;
-  background:#fff;color:#000;border:2px solid #000;
-  box-shadow:2px 2px 0 #000;
-  display:inline-flex;align-items:center;gap:4px;
+.header {
+  text-align: center;
+  margin-bottom: 32px;
+  position: relative;
 }
-.title-tag{
-  display:inline-block;font-size:20px;font-weight:900;
-  background:#ffe600;color:#000;padding:4px 14px;border-radius:12px;
-  border:2.5px solid #000;box-shadow:3px 3px 0 #000;
-  margin-bottom:10px;letter-spacing:2px;
+.badges {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
-.title-main{
-  font-size:48px;font-weight:900;color:#fff;line-height:1.1;letter-spacing:2px;
-  text-shadow:4px 4px 0 #000,-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000;
-  margin-bottom:4px;
+.badge {
+  padding: 5px 14px;
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.7);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.title-sub{font-size:16px;font-weight:700;color:#000;opacity:0.6;letter-spacing:1px;}
+.badge.highlight {
+  background: rgba(255, 36, 66, 0.08);
+  color: #ff2442;
+  border-color: rgba(255, 36, 66, 0.15);
+}
+.title-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff2442;
+  background: rgba(255, 36, 66, 0.08);
+  padding: 4px 14px;
+  border-radius: 50px;
+  margin-bottom: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.title-main {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 40px;
+  font-weight: 900;
+  color: #1e1b4b;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.title-main span {
+  background: linear-gradient(135deg, #ff2442 30%, #8b5cf6 90%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.title-sub {
+  font-size: 15px;
+  font-weight: 500;
+  color: #475569;
+  opacity: 0.85;
+}
 
-/* Input glass */
-.input-glass{
-  background:rgba(255,255,255,0.5);backdrop-filter:blur(16px);
-  -webkit-backdrop-filter:blur(16px);
-  border:2.5px solid #000;border-radius:20px;padding:14px;
-  box-shadow:4px 4px 0 #000;margin-bottom:10px;
+/* Input Area (Glassmorphism) */
+.input-glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 28px;
+  padding: 24px;
+  box-shadow: 0 20px 40px -15px rgba(31, 38, 135, 0.08), 0 1px 3px rgba(0, 0, 0, 0.01);
+  margin-bottom: 16px;
+  transition: border-color 0.3s;
 }
-.input-glass .mockup-header{
-  display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;
+.input-glass:focus-within {
+  border-color: rgba(255, 36, 66, 0.3);
 }
-.mockup-dots{display:flex;gap:4px;}
-.dot{width:8px;height:8px;border-radius:50%;border:1.5px solid #000;}
-.dot.r{background:#ff5f56;}
-.dot.y{background:#ffbd2e;}
-.dot.g{background:#27c93f;}
-.mockup-label{
-  font-family:'Outfit',sans-serif;font-size:10px;font-weight:800;color:#000;letter-spacing:0.5px;
+.input-glass .mockup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
-.input-row{display:flex;gap:8px;}
-.input-row input{
-  flex:1;padding:10px 14px;border-radius:12px;
-  border:2px solid #000;background:#fff;
-  font-family:'Noto Sans SC',sans-serif;font-size:14px;font-weight:500;color:#000;
-  outline:none;box-shadow:inset 1px 1px 4px rgba(0,0,0,0.05);
+.mockup-dots { display: flex; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; }
+.dot.r { background: #ff5f56; }
+.dot.y { background: #ffbd2e; }
+.dot.g { background: #27c93f; }
+.mockup-label {
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b5cf6;
+  letter-spacing: 1px;
 }
-.input-row input::placeholder{color:#999;font-weight:400;}
-.input-row button{
-  padding:10px 20px;border-radius:12px;border:2px solid #000;
-  background:#ff2442;color:#fff;
-  font-family:'Noto Sans SC',sans-serif;font-size:14px;font-weight:800;
-  cursor:pointer;box-shadow:2px 2px 0 #000;
-  transition:all .15s;white-space:nowrap;
-  display:flex;align-items:center;gap:4px;
+.input-row { display: flex; gap: 10px; }
+.input-row input {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.9);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e293b;
+  outline: none;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
+  transition: all 0.25s ease;
 }
-.input-row button:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 #000;}
-.input-row button:active{transform:translate(1px,1px);box-shadow:1px 1px 0 #000;}
-.input-row button:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+.input-row input::placeholder { color: #94a3b8; font-weight: 400; }
+.input-row input:focus {
+  border-color: rgba(255, 36, 66, 0.4);
+  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.08), inset 0 2px 4px rgba(0,0,0,0.01);
+  background: #fff;
+}
+.input-row button {
+  padding: 14px 28px;
+  border-radius: 16px;
+  border: none;
+  background: linear-gradient(135deg, #ff2442 0%, #ff4b60 100%);
+  color: #fff;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px -4px rgba(255, 36, 66, 0.35);
+  transition: all .2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.input-row button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -2px rgba(255, 36, 66, 0.45);
+}
+.input-row button:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px -4px rgba(255, 36, 66, 0.35);
+}
+.input-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 
 /* Examples */
-.examples{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
-.examples span{
-  padding:4px 12px;border-radius:50px;font-size:12px;font-weight:700;
-  background:#fff;border:2px solid #000;color:#000;
-  cursor:pointer;box-shadow:2px 2px 0 #000;
-  transition:all .15s;
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+  justify-content: center;
 }
-.examples span:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 #000;}
+.examples span {
+  padding: 6px 16px;
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  color: #475569;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.01);
+  transition: all .2s ease;
+}
+.examples span:hover {
+  transform: translateY(-2px);
+  background: #fff;
+  border-color: rgba(255, 36, 66, 0.2);
+  color: #ff2442;
+  box-shadow: 0 4px 10px rgba(255, 36, 66, 0.06);
+}
 
-/* Features grid */
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
-.card{
-  background:rgba(255,255,255,0.85);backdrop-filter:blur(8px);
-  border:2.5px solid #000;border-radius:16px;padding:14px;
-  box-shadow:3px 3px 0 #000;
+/* Features Grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
 }
-.card-icon{font-size:20px;margin-bottom:4px;}
-.card-title{font-size:14px;font-weight:800;color:#000;margin-bottom:2px;}
-.card-desc{font-size:11px;font-weight:600;color:#444;line-height:1.4;}
+.card {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.01);
+  transition: all .25s ease;
+}
+.card:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 28px -5px rgba(31, 38, 135, 0.05);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+.card-icon { font-size: 26px; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+.card-desc { font-size: 12px; font-weight: 500; color: #64748b; line-height: 1.5; }
 
-/* Loading */
-#loading{display:none;text-align:center;padding:40px 0;}
-.loader{width:48px;height:48px;margin:0 auto 16px;
-  border:4px solid rgba(0,0,0,0.1);
-  border-top-color:#ff2442;border-radius:50%;
-  animation:spin .7s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-#loading p{font-size:15px;font-weight:700;color:#000;}
-#loading .hint{font-size:12px;font-weight:500;color:rgba(0,0,0,0.4);margin-top:6px;}
-.progress-bar{
-  width:200px;height:6px;margin:12px auto 0;
-  background:rgba(0,0,0,0.08);border-radius:3px;overflow:hidden;
+/* Loading UI */
+#loading {
+  display: none;
+  text-align: center;
+  padding: 48px 24px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 20px 40px -15px rgba(31, 38, 135, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
-.progress-bar-inner{
-  height:100%;width:0%;background:linear-gradient(90deg,#ff2442,#ff7eb3);
-  border-radius:3px;animation:progress 120s linear forwards;
+.loader {
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 20px;
+  border: 4px solid rgba(255, 36, 66, 0.08);
+  border-top-color: #ff2442;
+  border-radius: 50%;
+  animation: spin .8s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
 }
-@keyframes progress{to{width:85%}}
+@keyframes spin { to { transform: rotate(360deg) } }
+#loading p.loading-title { font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+#loading .hint { font-size: 13px; font-weight: 500; color: #64748b; margin-bottom: 20px; }
+.quote-container {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 12px auto;
+  max-width: 320px;
+}
+.quote-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.06);
+  padding: 6px 16px;
+  border-radius: 30px;
+  border: 1px solid rgba(124, 58, 237, 0.1);
+  display: inline-block;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  opacity: 1;
+  transform: translateY(0);
+}
+.quote-text.fade-out {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.quote-text.fade-in {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.progress-bar {
+  width: 220px;
+  height: 6px;
+  margin: 16px auto 0;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.progress-bar-inner {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ff2442, #8b5cf6);
+  border-radius: 10px;
+  animation: progress 120s linear forwards;
+}
+@keyframes progress { to { width: 85% } }
 
-/* Result */
-#result{display:none;}
-.result-header{
-  display:flex;justify-content:space-between;align-items:center;
-  margin-bottom:14px;
+/* Result Frame */
+#result { display: none; width: 100%; }
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
-.result-header h2{font-size:20px;font-weight:900;color:#000;display:flex;align-items:center;gap:8px;}
-.result-header a{
-  padding:6px 16px;border-radius:10px;
-  background:#fff;border:2px solid #000;color:#000;
-  text-decoration:none;font-size:12px;font-weight:800;
-  box-shadow:2px 2px 0 #000;
+.result-header h2 { font-size: 20px; font-weight: 800; color: #1e293b; display: inline-flex; align-items: center; gap: 8px; }
+.result-header a {
+  padding: 8px 20px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #475569;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+  transition: all .2s;
 }
-#brochureFrame{
-  border:2.5px solid #000;border-radius:16px;overflow:hidden;
-  box-shadow:4px 4px 0 #000;
-  background:#fff;
+.result-header a:hover {
+  border-color: rgba(255, 36, 66, 0.2);
+  color: #ff2442;
+  box-shadow: 0 6px 12px -2px rgba(255, 36, 66, 0.08);
 }
-#brochureFrame iframe{width:100%;height:80vh;border:none;display:block;}
+#brochureFrame {
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.06);
+  background: #fff;
+}
+#brochureFrame iframe { width: 100%; height: 80vh; border: none; display: block; }
 
 /* Footer */
-.footer{
-  text-align:center;margin-top:24px;
-  display:flex;justify-content:center;gap:8px;align-items:center;
+.footer {
+  text-align: center;
+  margin-top: 32px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  align-items: center;
 }
-.footer span{
-  padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;
-  background:rgba(0,0,0,0.06);color:rgba(0,0,0,0.5);
-  letter-spacing:0.5px;
+.footer span {
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.03);
+  color: #64748b;
+  letter-spacing: 0.5px;
 }
-.footer .brand{font-family:'Outfit',sans-serif;color:rgba(0,0,0,0.3);}
+.footer .brand { font-family: 'Outfit', sans-serif; color: rgba(0,0,0,0.25); }
 
-@media(max-width:480px){
-  .title-main{font-size:36px;}
-  .input-row{flex-direction:column;}
-  .grid{grid-template-columns:1fr;}
-  .badge{font-size:10px;}
+@media (max-width: 480px) {
+  .title-main { font-size: 32px; }
+  .input-row { flex-direction: column; gap: 8px; }
+  .input-row button { width: 100%; justify-content: center; }
+  .grid { grid-template-columns: 1fr; }
+  .badge { font-size: 10px; padding: 4px 10px; }
+}
+
+/* Pipeline Customization Style */
+.pipeline-customization {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+}
+.custom-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+}
+.custom-title:hover {
+  color: #ff2442;
+}
+.custom-options {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.option-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+  transition: all 0.2s;
+}
+.option-item:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(99, 102, 241, 0.15);
+}
+.option-item input[type="checkbox"] {
+  margin-top: 4px;
+  width: 16px;
+  height: 16px;
+  accent-color: #ff2442;
+  cursor: pointer;
+}
+.option-details {
+  display: flex;
+  flex-direction: column;
+}
+.option-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.option-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* User Guide Style */
+.user-guide-card {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  padding: 18px 24px;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  box-shadow: 0 10px 25px -10px rgba(0, 0, 0, 0.03);
+}
+.guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e1b4b;
+  cursor: pointer;
+  user-select: none;
+}
+.guide-header:hover {
+  color: #ff2442;
+}
+.guide-content {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  padding-top: 14px;
+}
+.guide-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff2442, #8b5cf6);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(255, 36, 66, 0.2);
+}
+.step-body {
+  flex: 1;
+}
+.step-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 3px;
+}
+.step-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
 }
 </style>
 </head>
@@ -313,13 +653,13 @@ body{
 <div class="wrapper">
   <div class="header">
     <div class="badges">
-      <span class="badge">🤖 AI 自动生成</span>
-      <span class="badge">🗺️ 交互地图</span>
-      <span class="badge">✨ 懒人必备</span>
+      <span class="badge">🤖 AI 智能规划</span>
+      <span class="badge highlight">📸 小红书美食避雷</span>
+      <span class="badge">🗺️ Leaflet 交互路线</span>
     </div>
-    <div class="title-tag">旅行神器</div>
-    <div class="title-main">AI旅行攻略</div>
-    <div class="title-sub">输入目的地 · 一键生成</div>
+    <div class="title-tag">Smart Trip Planner</div>
+    <div class="title-main">随心游 <span>AI旅行攻略</span></div>
+    <div class="title-sub">说出你的旅行想法，一键生成图文并茂的手账式攻略</div>
   </div>
 
   <div class="input-glass">
@@ -327,11 +667,49 @@ body{
       <div class="mockup-dots">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
       </div>
-      <span class="mockup-label">COMMAND PROMPT</span>
+      <span class="mockup-label">AI PLANNER PROMPT</span>
     </div>
     <div class="input-row">
       <input id="goalInput" type="text" placeholder="输入目的地，例如「安吉周末自驾漂流」" onkeydown="if(event.key==='Enter')generate()">
-      <button id="genBtn" onclick="generate()">生成 ✨</button>
+      <button id="genBtn" onclick="generate()">规划行程 ✨</button>
+    </div>
+
+    <!-- Pipeline 步骤定制 -->
+    <div class="pipeline-customization">
+      <div class="custom-title" onclick="toggleCustomization()">
+        <span>⚙️ Pipeline 步骤配置 (非核心步骤可选)</span>
+        <span id="toggleIcon">➖</span>
+      </div>
+      <div class="custom-options" id="customOptions">
+        <label class="option-item">
+          <input type="checkbox" id="step_research" checked>
+          <div class="option-details">
+            <span class="option-name">小红书调研 📕 (Step 2)</span>
+            <span class="option-desc">抓取网红打卡景点与推荐美食（如未连接 OpenCLI 扩展会自动秒跳过，无多余等待）</span>
+          </div>
+        </label>
+        <label class="option-item">
+          <input type="checkbox" id="step_enrich" checked>
+          <div class="option-details">
+            <span class="option-name">POI 地址丰富 🏛️ (Step 4)</span>
+            <span class="option-desc">反查高德详细地址及片区信息，验证美食精确坐标</span>
+          </div>
+        </label>
+        <label class="option-item">
+          <input type="checkbox" id="step_distance" checked>
+          <div class="option-details">
+            <span class="option-name">驾车距离矩阵 📏 (Step 5)</span>
+            <span class="option-desc">计算两点间驾车距离与时间，以优化每日行驶排序</span>
+          </div>
+        </label>
+        <label class="option-item">
+          <input type="checkbox" id="step_tips" checked>
+          <div class="option-details">
+            <span class="option-name">出行建议与天气 🌤️ (Step 8.5)</span>
+            <span class="option-desc">获取打包清单、穿衣视觉指南以及未来 3-7 天天气预测</span>
+          </div>
+        </label>
+      </div>
     </div>
   </div>
 
@@ -343,27 +721,68 @@ body{
   </div>
 
   <div class="grid">
-    <div class="card"><div class="card-icon">📄</div><div class="card-title">图文手册</div><div class="card-desc">含精美封面及每日行程卡</div></div>
-    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">交互地图</div><div class="card-desc">支持 Leaflet 路线按日切换</div></div>
-    <div class="card"><div class="card-icon">🍜</div><div class="card-title">扫街美食</div><div class="card-desc">扫街榜高分推荐，绝不踩雷</div></div>
-    <div class="card"><div class="card-icon">🤖</div><div class="card-title">辩论规划</div><div class="card-desc">AI对抗优化路线，不走弯路</div></div>
+    <div class="card"><div class="card-icon">📖</div><div class="card-title">精美图文手册</div><div class="card-desc">自动配图生成卡片行程，打卡避雷一应俱全</div></div>
+    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰展示</div></div>
+    <div class="card"><div class="card-icon">🍳</div><div class="card-title">真实美食推荐</div><div class="card-desc">融合小红书双通道调研，扫街美食精挑细选</div></div>
+    <div class="card"><div class="card-icon">⚖️</div><div class="card-title">辩论式路线优化</div><div class="card-desc">高效派与悠闲派多轮对抗演算法，不走冤枉路</div></div>
   </div>
 
   <div id="loading">
     <div class="loader"></div>
-    <p>🤖 AI 正在规划行程...</p>
-    <p class="hint">正在调用高德API + DeepSeek 对抗辩论，约需2-3分钟</p>
+    <p class="loading-title">🤖 AI 正在规划你的专属攻略...</p>
+    <p class="hint">正在进行小红书多源分析与高德路线优化，预计需要 1-2 分钟</p>
+    <div class="quote-container">
+      <span class="quote-text" id="quoteText">正在翻小红书… 你负责偷懒，我负责做攻略 ✨</span>
+    </div>
     <div class="progress-bar"><div class="progress-bar-inner"></div></div>
   </div>
 
   <div id="result">
     <div class="result-header">
-      <h2>📖 攻略已生成</h2>
-      <a id="downloadLink" href="#">下载文件 ⬇</a>
+      <h2>📖 攻略已就绪</h2>
+      <a id="downloadLink" href="#">下载离线手册 ⬇</a>
     </div>
     <div id="brochureFrame">
       <iframe id="brochureIframe"></iframe>
     </div>
+  </div>
+
+  <!-- 使用说明 -->
+  <div class="user-guide-card">
+    <div class="guide-header" onclick="toggleGuide()">
+      <span>📖 AI 随心游使用说明</span>
+      <span id="guideToggleIcon">➕</span>
+    </div>
+    <div class="guide-content" id="guideContent" style="display: none;">
+      <div class="guide-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">输入您的旅行灵感</div>
+          <div class="step-desc">在上方输入目的地及特殊要求，如“安吉周末漂流自驾”、“带爸妈杭州两天一日，要轻松”等。系统会自动分析天数、预算和偏好。</div>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">定制您的专属流程</div>
+          <div class="step-desc">通过勾选“Pipeline 步骤配置”，您可以定制运行流程。如果需要最快的生成速度，可以取消勾选“小红书调研”等耗时步骤。</div>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">获取高颜值手账攻略</div>
+          <div class="step-desc">生成完毕后，系统将展示融合 Leaflet 交互地图的图文旅行手册，您可以在线任意切换景点、美食、酒店，还可以点击下载 HTML 离线查看。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="brand">Hermes Travel Engine</span>
+    <span>v1.2.0</span>
+  </div>
+</div>
 
 <script>
 // 丰富示例库
@@ -410,27 +829,105 @@ function rotateTags(){
 
 document.addEventListener('DOMContentLoaded',function(){
   rotateTags();
-  setInterval(rotateTags,5000);
+  setInterval(rotateTags,8000); // 稍微加长轮换时间，减少眼花缭乱感
 });
 
 function fill(t){document.getElementById('goalInput').value=t;}
+
+var quoteTimer = null;
+var QUOTES = [
+  "正在翻小红书… 你负责偷懒，我负责做攻略 ✨",
+  "让 AI 替你卷，你只管出发 🚗",
+  "别急，好的路线值得等 🗺️",
+  "大数据已经把这届网友的宝藏路线都扒出来了 🔍",
+  "懒人改变世界——包括旅行方式 🌍",
+  "正在避开所有排队两小时的网红踩雷点 🙅‍♂️",
+  "打工人，你的无痛旅行攻略正在打包中 📦",
+  "特种兵还是度假党？AI 正在帮你做最优解 ⚖️",
+  "攻略我来做，你只需要负责发朋友圈美照 📸",
+  "路线正在疯狂对齐中，马上出发！🚀",
+  "世界那么大，懒得做攻略？交给我啦 🗺️",
+  "正在为您挑选本地人私藏的宝藏街角 ☕",
+  "不做冤大头，避雷指南已加入豪华午餐 🍋",
+  "身体和灵魂，总有一个在期待这份攻略 💫",
+  "正在用大数据为你编织一场说走就走的梦 🦄",
+  "行程规划中…… 已经闻到远方的空气了 🍃",
+  "不塞车、不排队、不踩雷的完美路线正在生成中 🚗"
+];
+
+var LOADING_TEMPLATE = `
+  <div class="loader"></div>
+  <p class="loading-title">🤖 AI 正在规划你的专属攻略...</p>
+  <p class="hint">正在进行小红书多源分析与高德路线优化，预计需要 1-2 分钟</p>
+  <div class="quote-container">
+    <span class="quote-text" id="quoteText">正在翻小红书… 你负责偷懒，我负责做攻略 ✨</span>
+  </div>
+  <div class="progress-bar"><div class="progress-bar-inner"></div></div>
+`;
+
+function startQuoteRotation() {
+  if (quoteTimer) clearInterval(quoteTimer);
+  var quoteEl = document.getElementById('quoteText');
+  if (!quoteEl) return;
+  var lastIndex = 0;
+  
+  function nextQuote() {
+    var nextIdx;
+    do {
+      nextIdx = Math.floor(Math.random() * QUOTES.length);
+    } while (nextIdx === lastIndex && QUOTES.length > 1);
+    lastIndex = nextIdx;
+    var text = QUOTES[nextIdx];
+    
+    quoteEl.classList.add('fade-out');
+    setTimeout(function() {
+      quoteEl.innerText = text;
+      quoteEl.classList.remove('fade-out');
+      quoteEl.classList.add('fade-in');
+      void quoteEl.offsetWidth; // 触发回流
+      quoteEl.classList.remove('fade-in');
+    }, 400); // 对应 CSS 0.4s 过渡
+  }
+  
+  quoteTimer = setInterval(nextQuote, 6000); // 每 6 秒轮换一次
+}
 
 async function generate(){
   var goal=document.getElementById('goalInput').value.trim();
   if(!goal) return;
   var btn=document.getElementById('genBtn');
   btn.disabled=true;
-  document.getElementById('loading').style.display='block';
+  
+  if (quoteTimer) {
+    clearInterval(quoteTimer);
+    quoteTimer = null;
+  }
+  
+  var loadingEl = document.getElementById('loading');
+  loadingEl.innerHTML = LOADING_TEMPLATE;
+  loadingEl.style.display='block';
   document.getElementById('result').style.display='none';
-  document.querySelector('.progress-bar-inner').style.animation='none';
-  void document.querySelector('.progress-bar-inner').offsetWidth;
-  document.querySelector('.progress-bar-inner').style.animation='progress 120s linear forwards';
+  
+  startQuoteRotation();
+  
+  // 重启进度条动画
+  var bar = document.querySelector('.progress-bar-inner');
+  bar.style.animation='none';
+  void bar.offsetWidth; // 触发回流
+  bar.style.animation='progress 120s linear forwards';
+
+  // 获取定制启用的步骤
+  var steps = [];
+  if(document.getElementById('step_research').checked) steps.push('research');
+  if(document.getElementById('step_enrich').checked) steps.push('enrich');
+  if(document.getElementById('step_distance').checked) steps.push('distance');
+  if(document.getElementById('step_tips').checked) steps.push('tips');
 
   try{
     var resp=await fetch('/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({goal:goal})
+      body:JSON.stringify({goal:goal, steps:steps})
     });
     var data=await resp.json();
     var taskId=data.task_id;
@@ -445,21 +942,55 @@ async function generate(){
         document.getElementById('result').style.display='block';
         document.getElementById('loading').style.display='none';
         document.getElementById('goalInput').value='';
+        if (quoteTimer) {
+          clearInterval(quoteTimer);
+          quoteTimer = null;
+        }
         break;
       }else if(st.status==='failed'){
-        document.getElementById('loading').innerHTML='<p>❌ 生成失败</p><p style="font-size:13px;color:#666">'+st.error+'</p>';
+        if (quoteTimer) {
+          clearInterval(quoteTimer);
+          quoteTimer = null;
+        }
+        document.getElementById('loading').innerHTML='<p>❌ 生成失败</p><p style="font-size:13px;color:#666;margin-top:8px;">'+st.error+'</p>';
         break;
       }
       attempts++;
     }
   }catch(e){
+    if (quoteTimer) {
+      clearInterval(quoteTimer);
+      quoteTimer = null;
+    }
     document.getElementById('loading').innerHTML='<p>❌ 请求失败: '+e.message+'</p>';
   }
   btn.disabled=false;
 }
-</script>
-  </div>
 
+function toggleCustomization() {
+  var opts = document.getElementById('customOptions');
+  var icon = document.getElementById('toggleIcon');
+  if(opts.style.display === 'none') {
+    opts.style.display = 'flex';
+    icon.innerText = '➖';
+  } else {
+    opts.style.display = 'none';
+    icon.innerText = '➕';
+  }
+}
+
+function toggleGuide() {
+  var content = document.getElementById('guideContent');
+  var icon = document.getElementById('guideToggleIcon');
+  if(content.style.display === 'none') {
+    content.style.display = 'flex';
+    icon.innerText = '➖';
+  } else {
+    content.style.display = 'none';
+    icon.innerText = '➕';
+  }
+}
+</script>
 </body>
 </html>"""
 
