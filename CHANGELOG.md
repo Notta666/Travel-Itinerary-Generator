@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-06-29
+### Added
+- **Pipeline modularization**: `step_2_research()` and `step_6_plan_itinerary()` extracted to `pipeline/steps/research.py` and `pipeline/steps/planner.py`
+- **Unified API Key management**: `utils/config.py` centralizes all API key loading, eliminating 5 duplicate implementations across the codebase
+- **LLMClient multi-provider abstraction**: `utils/llm.py` now supports provider abstraction with `LLMClient` class (DeepSeek backend), preserving `call_deepseek()` backward compatibility
+- **Jinja2 template engine**: Brochure HTML generation migrated from 300-line f-string concatenation to `utils/brochure/templates/brochure.html` Jinja2 template
+- **Frontend externalization**: `webapp/main.py` reduced from ~1080 to 351 lines — HTML/CSS/JS extracted to `webapp/templates/index.html`, `webapp/static/style.css`, `webapp/static/app.js`
+- **Server-Sent Events (SSE)**: Webapp replaced 3-second polling with real-time `EventSource` streaming via FastAPI `StreamingResponse`
+- **SQLite task persistence**: Webapp tasks persisted to `data/tasks.db` instead of in-memory dict (survives restart)
+- **Progress callback mechanism**: `run_pipeline()` accepts `progress_callback(step, message, pct)` for real-time step tracking
+- **LLM call retry**: `call_deepseek()` now has exponential backoff retry (max 3 attempts, 1s/2s/4s) for network/rate-limit failures
+- **User preference learning**: `update_from_goal()` and `get_suggestions()` now active in `step_1_init()`
+- **Test suite**: 5 test files with 40 tests covering goal parser, budget parser, config loader, AMap client (mocked), and weather
+- **Dynamic lodging instruction**: Replaced hardcoded 5-day Guangzhou itinerary with `_build_lodging_instruction(context)` that adapts to any city/days/start_date
+- **Dynamic season description**: Hardcoded "6月底夏季" replaced with `_season()` from `tips.py`
+- **Dynamic city centers**: `city_centers` dict replaced with runtime geocoding via AMap API
+- **`data/tasks.db`** added to `.gitignore`
+
+### Changed
+- `run_pipeline.py` reduced from 1408 to 954 lines (-32%) via steps extraction
+- `webapp/main.py` reduced from 1083 to 351 lines (-68%) via frontend externalization
+- `brochure.py` converted from single file to `utils/brochure/` package (`__init__.py` + `renderer.py` + Jinja2 template)
+- Image fetch parallelism: `_fetch_photos_batch()` `max_workers` 2→4
+- Fusion prompt now uses summarized Bull/Bear data instead of full JSON injection (reduced token usage)
+- All 15 bare `except:` blocks replaced with specific exception types (`Exception`, `OSError`, `json.JSONDecodeError`)
+- All 11 function-body imports moved to module level
+- `requirements.txt` now declares `fastapi>=0.100.0`, `uvicorn>=0.23.0`, `jinja2>=3.0.0`
+
+### Removed
+- `utils/planner.py` — dead code (fully replaced by Step 6 in run_pipeline.py)
+- `web/template.html` — unused template
+- `utils/brochure.py` — replaced by `utils/brochure/` package
+- `data/cache/_qq_deliver.py` — one-off script, not part of project
+- `data/MEMORY.md` — placeholder, no code references
+- `step_7_render_html()` — no-op function
+- `TEMPLATE_PATH`, `DATA_DIR`, `OUTPUTS_DIR` globals — refactored to local scope
+
 ## [1.2.1] - 2026-06-29
 ### Fixed
 - Cross-city geocoding drift and image mismatch in multi-city itineraries (e.g. Shunde Qinghui Garden matching to Guangzhou Asia International Hotel, Zhuhai Qinglulu matching to Guangzhou Love Hotel).

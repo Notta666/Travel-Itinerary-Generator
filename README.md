@@ -27,7 +27,10 @@ python pipeline/run_pipeline.py --goal "带爸妈去南方"
 | ⚙️ **Pipeline 步骤定制** | Web 端支持勾选/取消非核心步骤（如跳过小红书调研），自由在“极速生成”与“极致内容”间切换 |
 | 🏨 **交互酒店选择** | 图文手册中支持手动勾选切换酒店，卡片自动更新，地图路线同步实时更新与连线 |
 | 🛑 **优雅中断保护** | 运行过程中按 `Ctrl+C` 触发二次确认交互，避免误触丢失已生成的中间成果 |
+| ⚡ **实时进度推送** | Web 端已升级为 SSE 实时推送步骤进度，告别轮询等待 |
 | 🗺️ **交互式地图** | Leaflet 地图按日切换，支持景点/餐厅/住宿三图层，路线连线清晰指引 |
+| 📝 **Jinja2 模板引擎** | 图文手册采用 Jinja2 模板渲染，告别 300 行 f-string 拼接噩梦 |
+| 🧪 **测试覆盖** | 5 个测试文件含 40 个测试用例（goal 解析、预算、配置、API 客户端、天气） |
 | 🍽️ **美食+景点一体** | 小红书双通道调研 + 高德坐标验证，对抗辩论规划路线 |
 | 💰 **预算管理** | 支持总预算/日均预算两种模式，自动按天分配 |
 | 🌤️ **天气预报** | 未来3天高德实时预报，超3天历史平均降级 |
@@ -107,28 +110,41 @@ python webapp/main.py
 ```
 Travel-Itinerary-Generator/
 ├── pipeline/
-│   └── run_pipeline.py    # 10步工序链入口（--goal 自然语言解析）
+│   ├── run_pipeline.py        # 工序链入口（--goal 自然语言解析）
+│   └── steps/
+│       ├── research.py        # Step 2: 小红书调研（已提取模块化）
+│       └── planner.py         # Step 6: 对抗辩论路线规划（已提取模块化）
 ├── utils/
-│   ├── amap_api.py        # 高德地图API封装（地理编码/POI搜索/路径规划）
-│   ├── brochure.py        # 图文手册生成器（封面/地图/酒店/预算/天气）
-│   ├── llm.py             # DeepSeek API 调用封装
-│   ├── research.py        # 小红书调研工具（OpenCLI 搜索+精读）
-│   ├── tips.py            # 出行建议生成器（通用/偏好/每日/应急）
-│   ├── weather.py         # 高德天气查询（实况+预报+历史平均降级）
-│   ├── image_fetcher.py   # 多引擎图片获取（高德→百度→Bing，7天缓存）
-│   ├── user_prefs.py      # 用户偏好记忆系统（自动学习常去城市/交通/预算）
-│   └── planner.py         # 对抗辩论规划器（备用独立入口）
+│   ├── amap_api.py            # 高德地图API封装（地理编码/POI搜索/路径规划）
+│   ├── brochure/              # 图文手册生成器
+│   │   ├── __init__.py        #   generate_brochure() 入口
+│   │   ├── renderer.py        #   Jinja2 模板渲染
+│   │   └── templates/         #   brochure.html 模板
+│   ├── config.py              # 统一 API Key 管理
+│   ├── llm.py                 # LLMClient 多后端抽象（DeepSeek + 占位）
+│   ├── research.py            # 小红书调研工具（OpenCLI 搜索+精读）
+│   ├── tips.py                # 出行建议生成器
+│   ├── weather.py             # 高德天气查询
+│   ├── image_fetcher.py       # 多引擎图片获取（高德→360→百度→Bing）
+│   ├── user_prefs.py          # 用户偏好记忆系统
 ├── webapp/
-│   └── main.py            # FastAPI 网页应用（异步后台任务）
+│   ├── main.py                # FastAPI 网页应用（SSE + SQLite 持久化）
+│   ├── templates/index.html   # 前端模板（独立于后端）
+│   └── static/
+│       ├── style.css          # 独立样式表
+│       └── app.js             # 独立前端逻辑
+├── tests/
+│   ├── test_goal_parser.py    # 目标解析测试
+│   ├── test_budget_parser.py  # 预算解析测试
+│   ├── test_config.py         # 配置加载测试
+│   ├── test_amap_client.py    # AMap 客户端测试（Mock HTTP）
+│   └── test_weather.py        # 天气模块测试
 ├── data/
-│   └── references/        # POI码表、城市编码表、设计文档
-├── outputs/               # 生成产物
-└── web/
-    └── template.html      # 独立地图模板
+│   └── references/            # POI码表、城市编码表
+└── outputs/                   # 生成产物
 ```
 
 ### Pipeline 工序链
-
 ```
 用户输入
   → Step 0  [核心] Goal解析（DeepSeek自然语言→结构化参数）
