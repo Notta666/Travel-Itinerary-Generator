@@ -30,6 +30,7 @@ outputs/*
 data/cache/*
 data/image_cache/*
 data/user_prefs.json
+data/tasks.db
 data/references/amap_poicode.zip
 data/references/amap_poicode/
 

@@ -5,16 +5,9 @@
 带7天文件缓存
 """
 import os, json, time, urllib.request, re, hashlib
+from utils.config import AMAP_KEY, BASE_DIR
 
-try:
-    from utils.amap_api import AMAP_KEY
-except ImportError:
-    try:
-        from amap_api import AMAP_KEY
-    except ImportError:
-        import os
-        AMAP_KEY = os.environ.get("AMAP_KEY", "")
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "image_cache")
+CACHE_DIR = os.path.join(BASE_DIR, "data", "image_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def _cache_path(name):
@@ -28,7 +21,7 @@ def _load_cache(name):
             d = json.load(open(p, "r"))
             if time.time() - d["ts"] < 7 * 86400:
                 return d["urls"]
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return None
 
@@ -36,7 +29,7 @@ def _save_cache(name, urls):
     try:
         with open(_cache_path(name), "w") as f:
             json.dump({"urls": urls, "ts": time.time()}, f)
-    except:
+    except (OSError, TypeError):
         pass
 
 def _gaode(name, city="上海"):
@@ -51,7 +44,7 @@ def _gaode(name, city="上海"):
                 photos = data["pois"][0].get("photos", [])
                 if photos:
                     return [p["url"] for p in photos[:2]]
-        except:
+        except Exception:
             time.sleep(1)
     return []
 
@@ -74,7 +67,7 @@ def _so(name, limit=2):
                 if len(urls) >= limit:
                     break
         return urls
-    except:
+    except Exception:
         return []
 
 def _baidu(name, limit=2):
@@ -94,7 +87,7 @@ def _baidu(name, limit=2):
             u = item.get("middleURL") or item.get("thumbURL") or item.get("objURL")
             if u and str(u).startswith("http"): urls.append(u)
         return urls
-    except:
+    except Exception:
         return []
 
 def _bing(name, limit=2):
@@ -113,7 +106,8 @@ def _bing(name, limit=2):
                 d = json.loads(m_str)
                 u = d.get("murl", "")
                 if u.startswith("http"): urls.append(u)
-            except: continue
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                continue
         if not urls:
             murls = re.findall(r'"murl"\s*:\s*"([^"]+)"', html)
             for u in murls:
@@ -121,11 +115,10 @@ def _bing(name, limit=2):
                     urls.append(u)
                     if len(urls) >= limit: break
         return urls
-    except:
+    except Exception:
         return []
 
 def _clean_name(name):
-    import re
     # 移除括号及其中的分店信息，如（聚福楼店）或(大良店)
     return re.sub(r'[\uff08(].*?[\uff09)]', '', name).strip()
 

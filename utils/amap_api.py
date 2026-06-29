@@ -15,32 +15,9 @@
 """
 
 import urllib.request, urllib.parse, json, os, time, threading
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-def _load_amap_key():
-    """从环境变量或项目根目录的 .env 文件加载高德 API Key"""
-    key = os.environ.get("AMAP_KEY", "")
-    if key:
-        return key
-    env_path = os.path.join(BASE_DIR, ".env")
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("AMAP_KEY="):
-                        val = line.split("=", 1)[1].strip().strip("\"'")
-                        if val and val != "***":
-                            return val
-        except Exception:
-            pass
-    return ""
-
-AMAP_KEY = _load_amap_key()
+from utils.config import AMAP_KEY, BASE_DIR
 
 # ---- POI 类型码速查 ----
-_POI_TYPES = None
 def load_poi_types():
     """加载本地 POI 分类码表, 返回 {typecode: name}"""
     global _POI_TYPES
@@ -135,13 +112,18 @@ class AMapClient:
         """
         if city == "顺德":
             city = "佛山"
-        city_centers = {"安吉": (119.6, 30.5), "杭州": (120.15, 30.28),
-                        "上海": (121.47, 31.23), "北京": (116.4, 39.9)}
+        # 动态获取目标城市的中心坐标作为参考
         expected_center = None
-        for k, v in city_centers.items():
-            if k in city or k in address:
-                expected_center = v
-                break
+        if city and "," not in city:
+            try:
+                city_url = _build_url("/v3/geocode/geo", key=self.key, address=city, city=city, output="JSON")
+                city_data = _request(city_url)
+                if city_data.get("status") == "1" and city_data.get("geocodes"):
+                    loc = city_data["geocodes"][0]["location"]
+                    lng, lat = loc.split(",")
+                    expected_center = (float(lng), float(lat))
+            except Exception:
+                pass
 
         coord = None
         # 1. 尝试常规地理编码

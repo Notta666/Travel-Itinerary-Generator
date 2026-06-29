@@ -15,7 +15,7 @@ def _load():
         try:
             with open(PREFS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return {"visited_cities": [], "preferences": {}, "transports": [], "budgets": []}
 

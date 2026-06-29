@@ -4,15 +4,7 @@
 零额外依赖，使用高德API获取城市天气并生成出行建议。
 """
 import urllib.request, json, time
-
-try:
-    from utils.amap_api import AMAP_KEY
-except ImportError:
-    try:
-        from amap_api import AMAP_KEY
-    except ImportError:
-        import os
-        AMAP_KEY = os.environ.get("AMAP_KEY", "")
+from utils.config import AMAP_KEY
 
 
 def _fetch_json(url, timeout=8):
