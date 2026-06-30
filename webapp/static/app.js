@@ -117,6 +117,8 @@ function resetButton() {
   btn.disabled=false;
   btn.innerText='🚀 规划行程';
   btn.style.background='';
+  btn.style.boxShadow='';
+  btn.classList.remove('cancel-state');
   currentTaskId = null;
   if (evtSource) { evtSource.close(); evtSource = null; }
 }
@@ -197,6 +199,7 @@ async function generate(){
     btn.disabled=false;
     btn.innerText='⏹️ 取消规划';
     btn.style.background='linear-gradient(135deg,#ef4444,#dc2626)';
+    btn.classList.add('cancel-state');
 
     // 使用 SSE（Server-Sent Events）替代轮询
     evtSource = new EventSource('/stream/'+taskId);

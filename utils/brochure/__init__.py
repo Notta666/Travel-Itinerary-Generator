@@ -3,12 +3,14 @@
 ========================================
 一本包含: 封面 → 每日行程(图片卡片) → 交互式Leaflet地图 → 必吃推荐 → 交通指南
 """
-import os, json, time, urllib.request, re, datetime, logging
+import os, json, time, urllib.request, re, datetime, logging, threading
 from utils.config import AMAP_KEY, BASE_DIR
 
 logger = logging.getLogger("travel_pipeline")
 _photo_cache = {}
 _last_fetch_time = 0
+_fetch_lock = threading.Lock()
+
 
 def _get_single_city(name, overall_city):
     if not overall_city:
@@ -29,37 +31,64 @@ def _get_single_city(name, overall_city):
         return "广州"
     return cities[0]
 
+
 def _fetch_photos(name, city="上海", category=""):
-    """统一调用 image_fetcher 的高德API获取POI照片，带文件缓存降级"""
+    """线程安全获取 POI 照片：双层降级 + HTTPS 强制 + 全局并发限流"""
     global _last_fetch_time
-    if name in _photo_cache:
-        return _photo_cache[name]
+    with _fetch_lock:
+        if name in _photo_cache:
+            return _photo_cache[name]
+
     urls = []
     cleaned = re.sub(r'[\uff08(].*?[\uff09)]', '', name).strip()
     single_city = _get_single_city(cleaned, city)
     if single_city == "顺德":
         single_city = "佛山"
-    # 用省份+城市+名称构建高精度搜索词
     from utils.image_fetcher import _get_search_query
     search_name = _get_search_query(name, single_city, category)
-    elapsed = time.time() - _last_fetch_time
-    if elapsed < 0.2:
-        time.sleep(0.2 - elapsed)
+    fallback_name = f"{single_city}{cleaned}" if single_city and single_city not in cleaned else cleaned
+
+    # 全局线程安全限流
+    with _fetch_lock:
+        elapsed = time.time() - _last_fetch_time
+        if elapsed < 0.2:
+            time.sleep(0.2 - elapsed)
+        _last_fetch_time = time.time()
+
+    # 1. Gaode 图片搜索
     try:
         from utils.image_fetcher import _gaode
         urls = _gaode(search_name, single_city)
+        if not urls and search_name != fallback_name:
+            time.sleep(0.1)
+            urls = _gaode(fallback_name, single_city)
     except Exception:
         pass
-    _last_fetch_time = time.time()
+
+    # 2. Web 搜索引擎降级（360 → 百度 → Bing，带额外并发控制）
     if not urls:
         try:
             from utils.image_fetcher import _so, _baidu, _bing
+            with _fetch_lock:
+                time.sleep(0.15)
             urls = _so(search_name) or _baidu(search_name) or _bing(search_name)
+            if not urls and search_name != fallback_name:
+                with _fetch_lock:
+                    time.sleep(0.2)
+                urls = _so(fallback_name) or _baidu(fallback_name) or _bing(fallback_name)
         except Exception:
             pass
-    _photo_cache[name] = urls
-    return urls
 
+    # 统一转 HTTPS（仅非高德来源，高德 store.is.autonavi.com 不支持 HTTPS）
+    safe_urls = []
+    for u in urls:
+        if u.startswith("http://") and "is.autonavi.com" not in u and "store.is" not in u:
+            u = "https://" + u[7:]
+        safe_urls.append(u)
+
+    with _fetch_lock:
+        _photo_cache[name] = safe_urls
+    return safe_urls
 def _fetch_photos_batch(poi_items, default_city="上海", max_workers=4):
     """批量并行获取POI照片"""
     from concurrent.futures import ThreadPoolExecutor, as_completed

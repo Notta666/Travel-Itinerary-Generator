@@ -9,6 +9,19 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - `pipeline/run_pipeline.py`: `signal.signal()` calls (lines 704-706, 808) wrapped with main-thread guard; `original_handler` defaults to `None` and only restored when previously captured.
 
+## [2.1.1] - 2026-06-30
+### Fixed
+- **图片出图率低**：`_fetch_photos()` 全局 `_last_fetch_time` 无锁竞争导致多线程并发时限流失效，部分请求被限流返回空。新增 `threading.Lock` 保护限流状态，Web 搜索引擎额外加 0.15s 间隔避免触发风控
+- **Gaode 图片被 HTTPS 转换搞崩**：高德图片服务器 `store.is.autonavi.com` 不支持 HTTPS，强制转换后全挂。改为仅非高德来源的 HTTP 才转 HTTPS
+- **WebApp 按钮交互不生效**：旧服务进程一直运行未重启，静态文件被浏览器缓存。新增 `?v=2.1.1` 缓存爆破参数，修复重置时未清理 `boxShadow` 和 `cancel-state` CSS 类的问题
+- **Footer 版本号**：`v1.2.0` → `v2.1.0`
+
+### Changed
+- `utils/brochure/__init__.py`：`_fetch_photos()` 增加线程锁 + HTTPS 智能转换 + 双层降级（省份精确→city+name 兜底）
+- `webapp/static/app.js`：修复 `resetButton()` 未清理样式残留
+- `webapp/static/style.css`：新增 `.cancel-state` 样式
+- `webapp/templates/index.html`：静态文件加 `v=2.1.1` 缓存参数
+
 ## [2.1.0] - 2026-06-30
 ### Added
 - **规划行程按钮二次点击可取消**：任务运行中按钮变红"⏹️ 取消规划"，再次点击调用 `POST /cancel/{task_id}` 中断 pipeline，每个步骤前检查取消标记（`CancelledError`），清理取消标记后优雅退出
