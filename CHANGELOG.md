@@ -9,6 +9,15 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - `pipeline/run_pipeline.py`: `signal.signal()` calls (lines 704-706, 808) wrapped with main-thread guard; `original_handler` defaults to `None` and only restored when previously captured.
 
+## [2.2.0] - 2026-06-30
+### Added
+- **Playwright 小红书引擎**：新建 `utils/playwright_xhs.py` 模块，基于 Playwright + Chromium 替代 OpenCLI。`utils/research.py` 重构为双引擎策略（Playwright 首选 → OpenCLI 降级），开机自检自动切换
+- **交互式登录工具**：`playwright_xhs.py --login` 打开浏览器窗口让用户手动登录小红书，登录态保存至 `data/xhs_storage.json` 复用
+
+### Changed
+- `utils/research.py`：`XiaoHongShu` 类重构，Playwright 作为主引擎，OpenCLI 保留为降级方案
+- `requirements.txt`：新增 `playwright>=1.40.0`
+
 ## [2.1.2] - 2026-06-30
 ### Fixed
 - **DeepSeek JSON 被截断**：7 天以上行程输出 JSON 超过 max_tokens 被截断，解析失败后降级到规则引擎生成通用垃圾行程。Bull/Bear 提至 6000、Fusion 提至 8000（拉满 DeepSeek 上限）
