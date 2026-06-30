@@ -48,7 +48,7 @@ python pipeline/run_pipeline.py --goal "带爸妈去南方"
 - Python 3.10+
 - 高德开放平台 Web 服务 API Key（[免费申请](https://lbs.amap.com/)）
 - DeepSeek API Key（[官网获取](https://platform.deepseek.com/)）
-- （可选）Chrome + OpenCLI 扩展 → 小红书调研增强
+- （如需小红书调研功能）Chrome 浏览器 + OpenCLI 扩展（[安装指南](https://github.com/jackwener/OpenCLI)）
 
 ### 安装
 
