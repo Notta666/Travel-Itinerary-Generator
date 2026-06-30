@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded',function(){
 function fill(t){document.getElementById('goalInput').value=t;}
 
 var quoteTimer = null;
+var currentTaskId = null;        // 当前运行的任务 ID
+var evtSource = null;            // SSE 连接
 var QUOTES = [
   "正在翻小红书… 你负责偷懒，我负责做攻略 ✨",
   "让 AI 替你卷，你只管出发 🚗",
@@ -110,11 +112,45 @@ function startQuoteRotation() {
   quoteTimer = setInterval(nextQuote, 6000);
 }
 
+function resetButton() {
+  var btn=document.getElementById('genBtn');
+  btn.disabled=false;
+  btn.innerText='🚀 规划行程';
+  btn.style.background='';
+  currentTaskId = null;
+  if (evtSource) { evtSource.close(); evtSource = null; }
+}
+
+function cancelCurrentTask() {
+  if (!currentTaskId) return;
+  var btn=document.getElementById('genBtn');
+  btn.disabled=true;
+  btn.innerText='⏳ 正在取消...';
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  fetch('/cancel/'+currentTaskId, {method:'POST'})
+    .then(function(r){return r.json()})
+    .then(function(){
+      resetButton();
+      document.getElementById('loading').innerHTML='<p>⏹️ 已取消规划</p>';
+    })
+    .catch(function(){
+      resetButton();
+    });
+}
+
 async function generate(){
   var goal=document.getElementById('goalInput').value.trim();
   if(!goal) return;
   var btn=document.getElementById('genBtn');
+
+  // 如果已有任务在运行，点击则取消
+  if (currentTaskId) {
+    cancelCurrentTask();
+    return;
+  }
+
   btn.disabled=true;
+  btn.innerText='⏳ 提交中...';
 
   if (quoteTimer) {
     clearInterval(quoteTimer);
@@ -155,9 +191,15 @@ async function generate(){
     });
     var data=await resp.json();
     var taskId=data.task_id;
-    
+    currentTaskId = taskId;
+
+    // 按钮改为「取消规划」
+    btn.disabled=false;
+    btn.innerText='⏹️ 取消规划';
+    btn.style.background='linear-gradient(135deg,#ef4444,#dc2626)';
+
     // 使用 SSE（Server-Sent Events）替代轮询
-    var evtSource = new EventSource('/stream/'+taskId);
+    evtSource = new EventSource('/stream/'+taskId);
     evtSource.onmessage = function(event) {
       var msg = JSON.parse(event.data);
       // 更新进度提示与步骤显示
@@ -167,6 +209,7 @@ async function generate(){
       if(stepEl && !msg.done) stepEl.innerText = '⏳ ' + msg.message;
       if(msg.done) {
         evtSource.close();
+        evtSource = null;
         if (quoteTimer) {
           clearInterval(quoteTimer);
           quoteTimer = null;
@@ -180,10 +223,12 @@ async function generate(){
         } else {
           document.getElementById('loading').innerHTML='<p>❌ 生成失败</p><p style="font-size:13px;color:#666;margin-top:8px;">'+msg.message+'</p>';
         }
+        resetButton();
       }
     };
     evtSource.onerror = function() {
       evtSource.close();
+      evtSource = null;
     };
   }catch(e){
     if (quoteTimer) {
@@ -191,8 +236,8 @@ async function generate(){
       quoteTimer = null;
     }
     document.getElementById('loading').innerHTML='<p>❌ 请求失败: '+e.message+'</p>';
+    resetButton();
   }
-  btn.disabled=false;
 }
 
 function toggleCustomization() {

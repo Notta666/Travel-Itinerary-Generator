@@ -122,16 +122,65 @@ def _clean_name(name):
     # 移除括号及其中的分店信息，如（聚福楼店）或(大良店)
     return re.sub(r'[\uff08(].*?[\uff09)]', '', name).strip()
 
-def get_photos(name, city="上海"):
+
+# 城市→省份映射，用于图片搜索时加入省份上下文物提高准确率
+_CITY_PROVINCE = {
+    "上海": "上海市", "北京": "北京市", "天津": "天津市", "重庆": "重庆市",
+    "广州": "广东省", "深圳": "广东省", "珠海": "广东省", "佛山": "广东省",
+    "顺德": "广东省", "东莞": "广东省", "中山": "广东省", "江门": "广东省",
+    "惠州": "广东省", "汕头": "广东省", "湛江": "广东省",
+    "杭州": "浙江省", "宁波": "浙江省", "温州": "浙江省", "嘉兴": "浙江省",
+    "湖州": "浙江省", "绍兴": "浙江省", "金华": "浙江省", "安吉": "浙江省",
+    "莫干山": "浙江省", "千岛湖": "浙江省", "乌镇": "浙江省", "西塘": "浙江省",
+    "舟山": "浙江省", "普陀山": "浙江省",
+    "南京": "江苏省", "苏州": "江苏省", "无锡": "江苏省", "常州": "江苏省",
+    "扬州": "江苏省", "镇江": "江苏省",
+    "成都": "四川省", "乐山": "四川省", "九寨沟": "四川省", "峨眉山": "四川省",
+    "大理": "云南省", "丽江": "云南省", "昆明": "云南省",
+    "桂林": "广西壮族自治区", "阳朔": "广西壮族自治区",
+    "厦门": "福建省", "福州": "福建省", "泉州": "福建省", "武夷山": "福建省",
+    "青岛": "山东省", "济南": "山东省", "威海": "山东省", "烟台": "山东省",
+    "三亚": "海南省", "海口": "海南省",
+    "西安": "陕西省", "武汉": "湖北省", "长沙": "湖南省",
+    "黄山": "安徽省", "合肥": "安徽省", "宏村": "安徽省",
+    "洛阳": "河南省", "开封": "河南省",
+    "大连": "辽宁省", "沈阳": "辽宁省",
+    "哈尔滨": "黑龙江省", "长春": "吉林省",
+    "兰州": "甘肃省", "西宁": "青海省", "乌鲁木齐": "新疆维吾尔自治区",
+    "澳门": "澳门特别行政区", "香港": "香港特别行政区",
+}
+
+
+def _get_search_query(name, city="", category=""):
+    """构建带省份上下文的高精度搜索关键词。
+    景点: '上海市上海外滩'  美食: '广东省广州陶陶居'
+    """
+    cleaned = _clean_name(name)
+    province = _CITY_PROVINCE.get(city, "")
+    # 如果城市名已包含在名称中，不加前缀
+    if city and city in cleaned:
+        return cleaned
+    # 如果是美食，加"美食"后缀提升搜图命中
+    suffix = " 美食" if category == "food" else ""
+    if province:
+        return f"{province}{city}{cleaned}{suffix}"
+    elif city:
+        return f"{city}{cleaned}{suffix}"
+    return cleaned
+
+def get_photos(name, city="上海", category=""):
     """高德→360图片→百度→Bing 降级，7天缓存"""
     cached = _load_cache(name)
     if cached is not None:
         return cached
 
     cleaned = _clean_name(name)
-    search_name = f"{city}{cleaned}" if city and city not in cleaned else cleaned
+    # 高德用 city+name（利用Gaode的region限制）
+    gaode_query = f"{city}{cleaned}" if city and city not in cleaned else cleaned
+    # Web图片搜索引擎用 省份+城市+名称（更高精度）
+    web_query = _get_search_query(name, city, category)
 
-    urls = _gaode(name, city) or _so(search_name) or _baidu(search_name) or _bing(search_name)
+    urls = _gaode(gaode_query, city) or _so(web_query) or _baidu(web_query) or _bing(web_query)
     if not urls and cleaned != name:
         urls = _so(cleaned) or _baidu(cleaned) or _bing(cleaned)
 

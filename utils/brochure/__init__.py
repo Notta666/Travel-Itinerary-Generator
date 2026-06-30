@@ -29,7 +29,7 @@ def _get_single_city(name, overall_city):
         return "广州"
     return cities[0]
 
-def _fetch_photos(name, city="上海"):
+def _fetch_photos(name, city="上海", category=""):
     """统一调用 image_fetcher 的高德API获取POI照片，带文件缓存降级"""
     global _last_fetch_time
     if name in _photo_cache:
@@ -39,9 +39,9 @@ def _fetch_photos(name, city="上海"):
     single_city = _get_single_city(cleaned, city)
     if single_city == "顺德":
         single_city = "佛山"
-    search_name = cleaned
-    if single_city not in cleaned and not any(k in cleaned for k in ["澳门", "佛山", "顺德", "珠海", "广州"]):
-        search_name = f"{single_city}{cleaned}"
+    # 用省份+城市+名称构建高精度搜索词
+    from utils.image_fetcher import _get_search_query
+    search_name = _get_search_query(name, single_city, category)
     elapsed = time.time() - _last_fetch_time
     if elapsed < 0.2:
         time.sleep(0.2 - elapsed)
@@ -67,13 +67,17 @@ def _fetch_photos_batch(poi_items, default_city="上海", max_workers=4):
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {}
         for item in poi_items:
-            if isinstance(item, tuple):
-                name, single_city = item
+            if isinstance(item, tuple) and len(item) >= 3:
+                name, single_city, category = item[:3]
+            elif isinstance(item, tuple):
+                name, single_city = item[:2]
+                category = ""
             else:
                 name, single_city = item, default_city
+                category = ""
             if not single_city:
                 single_city = default_city
-            futures[ex.submit(_fetch_photos, name, single_city)] = name
+            futures[ex.submit(_fetch_photos, name, single_city, category)] = name
         for f in as_completed(futures):
             name = futures[f]
             try:
@@ -164,9 +168,9 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
     all_poi_items = []
     for day in itinerary:
         for poi in day.get("pois", []):
-            all_poi_items.append((poi["name"], poi.get("city", "")))
+            all_poi_items.append((poi["name"], poi.get("city", ""), "sight"))
         for food in day.get("foods", []):
-            all_poi_items.append((food["name"], food.get("city", "")))
+            all_poi_items.append((food["name"], food.get("city", ""), "food"))
     photo_cache = _fetch_photos_batch(all_poi_items, city) if all_poi_items else {}
 
     # 预批量搜索酒店
