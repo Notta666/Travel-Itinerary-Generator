@@ -48,7 +48,8 @@ python pipeline/run_pipeline.py --goal "带爸妈去南方"
 - Python 3.10+
 - 高德开放平台 Web 服务 API Key（[免费申请](https://lbs.amap.com/)）
 - DeepSeek API Key（[官网获取](https://platform.deepseek.com/)）
-- （如需小红书调研功能）Chrome 浏览器 + OpenCLI 扩展（[安装指南](https://github.com/jackwener/OpenCLI)）
+- （如需小红书调研功能）Playwright（[安装指南](https://playwright.dev/python/)）— 首次使用需执行 `playwright install chromium` 并运行交互式登录
+- （备选方案）Chrome 浏览器 + OpenCLI 扩展（[安装指南](https://github.com/jackwener/OpenCLI)）— Playwright 不可用时自动降级
 
 ### 安装
 
@@ -122,7 +123,8 @@ Travel-Itinerary-Generator/
 │   │   └── templates/         #   brochure.html 模板
 │   ├── config.py              # 统一 API Key 管理
 │   ├── llm.py                 # LLMClient 多后端抽象（DeepSeek + 占位）
-│   ├── research.py            # 小红书调研工具（OpenCLI 搜索+精读）
+│   ├── research.py            # 小红书调研工具（Playwright → OpenCLI 双引擎）
+│   ├── playwright_xhs.py      # Playwright 浏览器自动化引擎（替代 OpenCLI）
 │   ├── tips.py                # 出行建议生成器
 │   ├── weather.py             # 高德天气查询
 │   ├── image_fetcher.py       # 多引擎图片获取（高德→360→百度→Bing）
@@ -169,7 +171,7 @@ Travel-Itinerary-Generator/
 
 | 数据 | 来源 | 优先级 |
 |:---|:---|:---:|
-| 景点/美食 | 小红书（搜索+精读） | 🥇 主数据源 |
+| 景点/美食 | 小红书（Playwright 浏览器自动化 → OpenCLI 降级） | 🥇 主数据源 |
 | POI坐标验证 | 高德地图 API | 🥈 辅助验证 |
 | 酒店 | 高德周边搜索 | 🥈 |
 | 天气 | 高德天气 API | 🥈 |
@@ -218,7 +220,7 @@ AMAP_KEY=your-gaode-api-key-here
 1. **API Key 安全**：`.env` 文件已加入 `.gitignore`，切勿提交真实 Key（含硬编码 Key 的提交会立即暴露）
 2. **高德 API 限额**：个人开发者每日约 5000 次调用，个人使用足够
 3. **DeepSeek API 费用**：deepseek-chat 模型价格低廉，单次攻略约 ¥0.1-0.3
-4. **小红书调研**：需 Chrome 浏览器 + OpenCLI 扩展，通过用户本机浏览器会话访问小红书公开页面。**不涉及侵入式爬虫、不绕过登录验证、不批量抓取数据**。如 OpenCLI 不可用则自动降级为手动 POI 模式
+4. **小红书调研**：基于 Playwright（Chromium 浏览器自动化），需执行 `playwright install chromium` 并运行交互式登录保存登录态。如 Playwright 不可用则自动降级为 OpenCLI + Chrome 扩展。**不涉及侵入式爬虫、不绕过登录验证、不批量抓取数据**
 5. **POI重名与跨城偏差问题**：如"江南天池"可能定位到广西，代码已有城市偏差检测+V5搜索兜底。在多城市行程中，系统能够通过 LLM 自动将景点和美食映射归入其所属具体城市限制下地理编码，防止如"顺德清晖园"匹配到广州同名或类似商户。
 6. **图片获取**：高德图片为空时自动降级到百度/Bing搜索，7天文件缓存
 
@@ -232,8 +234,9 @@ AMAP_KEY=your-gaode-api-key-here
 - [**Hatari130/map-creator**](https://github.com/Hatari130/map-creator) — 结合 GIS+GPT 的城市打卡地图生成器，启发了本项目的海报风格手册和图片获取方案
 - [**Drfccv/AI-Trip-Planner**](https://github.com/Drfccv/AI-Trip-Planner) — 基于 LLM+高德 API 的旅行规划器，验证了技术路线的可行性
 - [**Panniantong/agent-reach**](https://github.com/Panniantong/agent-reach) — AI Agent 互联网渠道工具，提供小红书/B站/Reddit 等调研能力
-- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，支撑小红书内容采集
-- [**NanmiCoder/MediaCrawler**](https://github.com/NanmiCoder/MediaCrawler) — 多平台自媒体数据采集工具（54K★），其架构设计为后续替代 OpenCLI 提供参考
+- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，现已降级为 Playwright 的备用方案
+- [**NanmiCoder/MediaCrawler**](https://github.com/NanmiCoder/MediaCrawler) — 多平台自媒体数据采集工具（54K★），为 Playwright 引擎的架构参考
+- [**Microsoft/playwright-python**](https://github.com/microsoft/playwright-python) — 浏览器自动化框架，本项目的首选小红书数据采集后端
 
 ### 技术依赖
 
