@@ -701,9 +701,11 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
 
     _report = lambda step, msg, pct: progress_callback and progress_callback(step, msg, pct)
 
-    # 注册 Ctrl+C 信号处理器（二次确认）
-    original_handler = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, _signal_handler)
+    # 注册 Ctrl+C 信号处理器（二次确认），仅主线程可用
+    original_handler = None
+    if threading.current_thread() is threading.main_thread():
+        original_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, _signal_handler)
 
     if not prefs:
         prefs = {}
@@ -805,7 +807,8 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
         print(f"\n🛑 Pipeline 已停止: {e}")
         print("  已完成的步骤成果已保留。")
     finally:
-        signal.signal(signal.SIGINT, original_handler)
+        if original_handler is not None and threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, original_handler)
         total_elapsed = time.time() - pipeline_t0
         print(f"\n⏱️  Pipeline 总耗时: {total_elapsed:.1f}s")
         _print_timing_summary()

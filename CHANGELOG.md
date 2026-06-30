@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-06-30
+### Fixed
+- **Web App crash in background threads**: `run_pipeline()` called `signal.signal()` in non-main threads when running via the FastAPI web app (`webapp/main.py`), crashing with `ValueError: signal only works in main thread`. This affected all web app users (e.g. Xiaohongshu visitors) who triggered a generation. Signal registration/restoration is now guarded by `threading.current_thread() is threading.main_thread()`, so Ctrl+C handling works in CLI mode while web app background threads run safely.
+
+### Changed
+- `pipeline/run_pipeline.py`: `signal.signal()` calls (lines 704-706, 808) wrapped with main-thread guard; `original_handler` defaults to `None` and only restored when previously captured.
+
 ## [2.0.0] - 2026-06-29
 ### Added
 - **Pipeline modularization**: `step_2_research()` and `step_6_plan_itinerary()` extracted to `pipeline/steps/research.py` and `pipeline/steps/planner.py`
