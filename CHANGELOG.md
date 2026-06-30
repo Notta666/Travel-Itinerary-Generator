@@ -9,6 +9,21 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - `pipeline/run_pipeline.py`: `signal.signal()` calls (lines 704-706, 808) wrapped with main-thread guard; `original_handler` defaults to `None` and only restored when previously captured.
 
+## [2.1.0] - 2026-06-30
+### Added
+- **规划行程按钮二次点击可取消**：任务运行中按钮变红"⏹️ 取消规划"，再次点击调用 `POST /cancel/{task_id}` 中断 pipeline，每个步骤前检查取消标记（`CancelledError`），清理取消标记后优雅退出
+- **图片搜索增加省份上下文**：新增 `_CITY_PROVINCE` 映射（71 城），`_get_search_query()` 构建 `省份+城市+名称` 搜索词。景点搜索如 `上海市上海外滩`、`浙江省杭州西湖`；美食追加 ` 美食` 后缀如 `广东省广州陶陶居 美食`
+- **端到端测试**：`tests/test_amap_client.py` 新增限流/重试测试
+
+### Fixed
+- **WebApp 500 Internal Server Error**：`TemplateResponse(request, name, context)` 签名调用修复（Starlette 1.0.1 + Jinja2 3.1.6 兼容性），之前错误地传入了 `(name, context)` 导致 Jinja2 cache_key 拿到 dict 报 `TypeError: unhashable type: 'dict'`
+- **`signal.signal()` 在后台线程中调用崩溃**：移至主线程初始化
+
+### Changed
+- `utils/image_fetcher.py` — `get_photos()` 新增 `category` 参数，高德用 `city+name`，Web 引擎用 `province+city+name`
+- `utils/brochure/__init__.py` — `_fetch_photos()` 和 `_fetch_photos_batch()` 支持 3-tuple `(name, city, category)`，区分景点/美食搜图策略
+- `webapp/static/app.js` — 全面重写任务状态管理，新增 `currentTaskId` / `cancelCurrentTask()` / `resetButton()`
+
 ## [2.0.0] - 2026-06-29
 ### Added
 - **Pipeline modularization**: `step_2_research()` and `step_6_plan_itinerary()` extracted to `pipeline/steps/research.py` and `pipeline/steps/planner.py`
