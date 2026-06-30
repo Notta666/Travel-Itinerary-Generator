@@ -126,8 +126,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
     try:
         # Bull + Bear 并行调用
         with ThreadPoolExecutor(max_workers=2) as ex:
-            f_bull = ex.submit(call_deepseek, "返回纯JSON。", bull_prompt, 0.3, 3000)
-            f_bear = ex.submit(call_deepseek, "返回纯JSON。", bear_prompt, 0.3, 3000)
+            f_bull = ex.submit(call_deepseek, "返回纯JSON。", bull_prompt, 0.3, 4000)
+            f_bear = ex.submit(call_deepseek, "返回纯JSON。", bear_prompt, 0.3, 4000)
             bull_raw = f_bull.result()
             bear_raw = f_bear.result()
         bull_result = bull_raw if isinstance(bull_raw, dict) else {}
@@ -135,7 +135,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         # Bear返回0天时重试一次
         if isinstance(bear_result, dict) and len(bear_result.get('days',[]) or []) == 0:
             print("  ⚠️ Bear返回0天，重试一次...")
-            bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=3000)
+            bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=4000)
             bear_result = bear_retry if isinstance(bear_retry, dict) else bear_result
         print(f"  🐂 Bull → {len(bull_result.get('days',[]) or [])} 天 | 🐻 Bear → {len(bear_result.get('days',[]) or [])} 天")
 
@@ -187,7 +187,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
   "food_highlights":["必吃1","必吃2"]}}"""
 
         print("  ⚖️ Fusion 综合裁决中...")
-        fusion_result = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=4000)
+        fusion_result = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=6000)
         days_out = fusion_result.get("days", [])
     except Exception as e:
         print(f"  ⚠️ LLM 路线规划规划失败: {e}，将启动规则引擎降级规划方案。")
