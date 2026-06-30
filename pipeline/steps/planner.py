@@ -1,5 +1,5 @@
 """
-Step 6: 对抗性辩论路线规划 (Bull / Bear / Fusion)
+Step 6: 对抗性辩论路线规划 (方案A / 方案B / 综合)
 ====================================================
 """
 import json, copy, time, logging
@@ -49,12 +49,12 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
        Fusion(综合) → 最终行程(景点+餐厅交替)
     """
     _report = lambda step, msg, pct: progress_callback and progress_callback(step, msg, pct)
-    _report("plan_itinerary", "Step 6/9: 对抗性辩论路线规划 🐂🐻⚖️", 50)
+    _report("plan_itinerary", "多方案路线辩论规划 ✨", 50)
 
     from utils.llm import call_deepseek
 
     print(f"\n{'='*50}")
-    print(f"Step 6/9: 对抗性辩论路线规划 🐂🐻⚖️")
+    print(f"Step 6/9: 多方案路线辩论规划 ✨")
     print(f"{'='*50}")
     city = context["city"]
     days = context["days"]
@@ -90,6 +90,51 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 
     lodging_instruction = _build_lodging_instruction(context)
 
+    # ---- 飞猪实时价格数据注入 ----
+    flyai_prices = context.get("flyai_prices", {})
+    flyai_section = ""
+    if flyai_prices.get("available"):
+        lines = ["\n【实时价格参考（飞猪FlyAI）】"]
+        flight_data = flyai_prices.get("flight", {})
+        if flight_data.get("cheapest"):
+            lines.append(
+                f"✈️ 机票: {city}方向最低¥{flight_data['cheapest']:.0f}/人"
+                f"（{flight_data.get('count',0)}个选项，{flight_data.get('source','?')}数据）"
+            )
+        train_data = flyai_prices.get("train", {})
+        if train_data.get("cheapest"):
+            lines.append(
+                f"🚄 高铁: {city}方向最低¥{train_data['cheapest']:.0f}/人"
+                f"（{train_data.get('count',0)}个选项，{train_data.get('source','?')}数据）"
+            )
+        hotel_data = flyai_prices.get("hotel", {})
+        if hotel_data.get("cheapest"):
+            lines.append(
+                f"🏨 住宿: {city}最低¥{hotel_data['cheapest']:.0f}/晚"
+                f"（{hotel_data.get('count',0)}个选项，{hotel_data.get('source','?')}数据）"
+            )
+        lines.append("请在规划时参考以上实时价格，生成符合预算的行程。")
+        flyai_section = "\n".join(lines) + "\n"
+
+    # ---- 预算×人数约束注入 ----
+    prefs = context.get("preferences", {})
+    budget_raw = prefs.get("budget", "")
+    people_count = prefs.get("people_count", 2)
+    budget_constraint = ""
+    if budget_raw or people_count:
+        parts = []
+        if people_count:
+            parts.append(f"👥 出行人数: {people_count}人")
+        if budget_raw:
+            parts.append(f"💰 总预算: {budget_raw}")
+        parts.append("规划时请按以下原则优化路线:")
+        parts.append("  1. 所有费用 x 人数 = 总支出，必须在预算范围内")
+        parts.append("  2. 优先推荐顺路的景点/餐厅（减少交通支出）")
+        parts.append("  3. 酒店推荐在当日行程的中间位置（顺路最优，不走回头路）")
+        parts.append("  4. 交通方式（机票/高铁/自驾）应在预算内选择最合适的")
+        budget_constraint = "\n".join(parts) + "\n"
+    # ---- 结束实时价格注入 ----
+
     format_instruction = '输出JSON: {"days":[{"day":1,"label":"区域","summary":"","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)","slots":[{"type":"sight/food","name":"名称","city":"该景点或餐厅所在的具体城市(如广州/佛山/珠海/澳门)","time":"时段","transit":"","note":"","cuisine":"","cost":"","rating":""}]}]}'
 
     # ---- Bull Prompt ----
@@ -97,7 +142,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
 {lodging_instruction}
-
+{budget_constraint}
+{flyai_section}
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
@@ -106,6 +152,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 2. 每个景点配附近餐厅，时间合理。
 3. 结合赞点（highlights）和避雷吐槽（complaints），合理编排路线。
 4. 【餐饮推荐规则】：每天原则上必须推荐早、中、晚三顿正餐（早餐、午餐、晚餐，类型均为food，并在 time_slot 或 note 中标明），在正餐之间的空闲时段，可以穿插推荐当地特色小吃或甜点（如双皮奶、蛋挞、双皮奶等），并明确标注为小吃或甜点。
+5. ⚠️【全网黑过滤】如果某个菜品/餐厅的 complaints 包含"全网黑""游客陷阱"等关键词，禁止推荐。
+6. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，确保行程总花费不超预算。
 {format_instruction}"""
 
     # ---- Bear Prompt ----
@@ -113,7 +161,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
 {lodging_instruction}
-
+{budget_constraint}
+{flyai_section}
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
@@ -121,6 +170,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 1. 严格遵守【用户特别行程与动线要求】与【特别住宿与时间限制规则】中的跨城交通、天数和住宿点分配。
 2. **【景点与美食辩论】**：针对每一个包含避雷/吐槽（complaints）的景点或餐厅进行评估。如果避雷点严重（例如：排队超过2小时、虚假宣传、口味难吃/宰客等），你必须在规划时**果断舍弃/替换**该地。
 3. 【餐饮推荐规则】：每天原则上必须包含早、中、晚三顿正餐（早餐、午餐、晚餐，类型为food），每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。在正餐之间的空余时段，可以合理安排推荐特色小吃或甜品（如双皮奶、蛋挞等），但必须标明为小吃/甜点，不要与正餐时间冲突。
+4. ⚠️ 【全网黑过滤】特别注意：如果某个餐厅/菜品的 complaints 中包含"全网黑""游客陷阱""名过其实""避雷"等关键词，或评论区大量出现一致差评，必须将其**彻底从最终行程中移除**，不可仅标注警示。
+5. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，推荐高品质但不超预算的方案。
 {format_instruction}"""
 
     try:
@@ -137,7 +188,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
             print("  ⚠️ Bear返回0天，重试一次...")
             bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=6000)
             bear_result = bear_retry if isinstance(bear_retry, dict) else bear_result
-        print(f"  🐂 Bull → {len(bull_result.get('days',[]) or [])} 天 | 🐻 Bear → {len(bear_result.get('days',[]) or [])} 天")
+        print(f"  📋 方案A → {len(bull_result.get('days',[]) or [])} 天 | 方案B → {len(bear_result.get('days',[]) or [])} 天")
 
         # ---- Fusion Prompt (压缩Bull/Bear摘要) ----
         def _summarize_plan(result):
@@ -165,7 +216,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
-
+{budget_constraint}
+{flyai_section}
 Bull高效方案摘要: {bull_summary}
 Bear悠闲避雷方案摘要: {bear_summary}
 
@@ -178,6 +230,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
 3. 如果某个景点或餐厅在小红书评论中吐槽严重（如虚假宣传、性价比极低），采纳 Bear 的建议，予以替换或在 note 中加入特别警示。
 4. 在最终输出的 `overall_note` 中，必须包含一段 **【景点与美食辩论纪要】**：列出对于争议景点分析师们的不同看法以及你的最终裁决理由。
 5. 必须严格落实【一日三餐+小吃甜点】规则：最终方案里，每一天原则上都要推荐早餐、午餐、晚餐三顿正餐（标注在时段或note中），其它闲暇时段（下午或夜间）可穿插推荐特色小吃/甜品/夜宵，不能遗漏正餐。
+6. ⚠️ 【全网黑一票否决】如果某餐厅/菜品的 complaints 含"全网黑""游客陷阱"——直接移除，不可保留。Fusion 裁决时优先采纳有明确避雷依据的 Bear 方案。
 
 输出JSON:
 {{"days":[{{"day":1,"label":"主题","summary":"概要","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)",

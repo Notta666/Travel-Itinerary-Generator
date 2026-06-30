@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0] - 2026-07-01
+### Added
+- **多城市串联规划**：省份+≥5天行程自动生成多城市路线（如浙江10日→杭州+绍兴+宁波+乌镇+千岛湖），按天平均分配，各城市独立跑 pipeline 后合并行程
+- **高铁/航班详情展示**：一键预订总览中展示具体车次号(G7331)、出发/到达站、时间、座位等级；航班号(MU6549)、航司、机场航站楼、起降时间
+- **门票预订入口**：新增 `query_poi_ticket_booking()` 通过 ai-search 智能搜索门票预订链接
+- **交通方式重评估**：Step 5.6 基于高德实际驾车距离 + FlyAI 实时票价 + 预算约束用 LLM 综合决策交通方式（覆盖 Step 0 的猜测）
+- **预算×人数约束注入**：Bull/Bear/Fusion 三段 prompt 增加出行人数×单价=总支出的硬约束
+- **全网黑食品过滤**：提取层明确标注"西湖醋鱼"类游客陷阱菜品为"全网黑"，Bear/Fusion 一票否决
+- **AGY 锁自动解锁**：bridge 检测到僵尸 agy.exe 进程时自动 taskkill 后重试
+
+### Fixed
+- **图片分类精准化**：美食/景点双轨道关键词搜索 + URL 反模式过滤，防止西湖→西湖醋鱼图片混淆
+- **酒店顺路优化**：从质心搜索改为路线中点+POI聚类多点搜索 + 顺路评分排序
+- **性能优化**：图片查询量降 75%（关键词缩减 4→2、查询顺序反转、分级抖动 0.05-0.15s）
+- **牛熊字样去除**：用户可见位置（进度消息/打印输出/WebUI）不再出现 🐂🐻 和 Bull/Bear 术语，改为"多方案路线辩论"和方案A/B
+- **等待语料丰富化**：WebUI 加载页展示 13 条按实际工序定制的轮播文案，SSE 消息自动截掉"Step X/Y:"前缀避免与进度条重复
+- **酒店卡片主图**：`_main_pic` 为空时自动网络搜索补图
+
+### Changed
+- `flyai_api.py.query_flight/query_train` 返回结构化 `segments` 字段（替代旧的 raw `journeys`）
+- `brochure.html` 新增 `.booking-section / .bi-row / .bi-detail / .btn-booking` 样式
+- `check_agy_lock()` 新增 `force_unlock=True` 自动杀僵尸进程
+
 ## [2.0.1] - 2026-06-30
 ### Fixed
 - **Web App crash in background threads**: `run_pipeline()` called `signal.signal()` in non-main threads when running via the FastAPI web app (`webapp/main.py`), crashing with `ValueError: signal only works in main thread`. This affected all web app users (e.g. Xiaohongshu visitors) who triggered a generation. Signal registration/restoration is now guarded by `threading.current_thread() is threading.main_thread()`, so Ctrl+C handling works in CLI mode while web app background threads run safely.

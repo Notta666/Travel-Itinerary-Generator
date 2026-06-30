@@ -54,6 +54,11 @@ body {
   color: #ff2442;
   border-color: rgba(255, 36, 66, 0.15);
 }
+.badge.flyai {
+  background: rgba(16, 185, 129, 0.08);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.15);
+}
 .title-tag {
   display: inline-block;
   font-size: 12px;
@@ -182,51 +187,133 @@ body {
   box-shadow: 0 8px 24px -2px rgba(220, 38, 38, 0.5);
 }
 
+/* 参数区：统一玻璃容器 */
+.params-area {
+  background: linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.06));
+  border: 1px solid rgba(99,102,241,0.08);
+  border-radius: 16px;
+  padding: 16px 18px 18px;
+  margin-top: 16px;
+  transition: all 0.3s ease;
+}
+.params-area:focus-within {
+  border-color: rgba(99,102,241,0.2);
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.06);
+}
 .params-row {
   display: flex;
-  gap: 16px;
-  margin-top: 16px;
-  margin-bottom: 8px;
+  gap: 14px;
 }
 .param-item {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
+  min-width: 0;
 }
 .param-item label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.3px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+}
+.param-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.label-sub {
+  font-weight: 400;
+  color: #94a3b8;
+  font-size: 10px;
 }
 .param-item input {
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.9);
-  font-family: 'Noto Sans SC', sans-serif;
-  font-size: 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  font-family: 'Noto Sans SC', 'Inter', sans-serif;
+  font-size: 13.5px;
   font-weight: 500;
   color: #1e293b;
   outline: none;
-  transition: all 0.25s ease;
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
 }
 .param-item input::placeholder {
-  color: #94a3b8;
+  color: #cbd5e1;
   font-weight: 400;
+  font-size: 12px;
 }
 .param-item input:focus {
-  border-color: rgba(255, 36, 66, 0.4);
-  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.08);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3.5px rgba(99,102,241,0.12);
   background: #fff;
 }
-@media (max-width: 580px) {
+/* 酒店预算双输入框：视觉上融为一体 */
+.hotel-range {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  position: relative;
+}
+.hotel-range input {
+  width: 50%;
+  text-align: center;
+  border-radius: 0;
+  -moz-appearance: textfield;
+}
+.hotel-range input::-webkit-outer-spin-button,
+.hotel-range input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.hotel-range input:first-child {
+  border-radius: 10px 0 0 10px;
+  border-right: none;
+}
+.hotel-range input:last-child {
+  border-radius: 0 10px 10px 0;
+  border-left: none;
+}
+.range-bar {
+  width: 20px;
+  min-width: 20px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-top: 1.5px solid #e2e8f0;
+  border-bottom: 1.5px solid #e2e8f0;
+  color: #94a3b8;
+  font-size: 11px;
+  position: relative;
+}
+.range-bar::after {
+  content: '—';
+  color: #94a3b8;
+  font-weight: 300;
+  font-size: 12px;
+}
+.hotel-range input:focus ~ .range-bar,
+.hotel-range input:focus + .range-bar {
+  border-color: #6366f1;
+}
+.hotel-range:focus-within .range-bar {
+  border-color: #6366f1;
+}
+@media (max-width: 640px) {
   .params-row {
     flex-direction: column;
     gap: 12px;
+  }
+  .params-area {
+    padding: 14px 14px 16px;
   }
 }
 
@@ -353,7 +440,7 @@ body {
   border-radius: 10px;
   animation: progress 120s linear forwards;
 }
-@keyframes progress { to { width: 85% } }
+@keyframes progress { to { width: 100% } }
 
 /* Result Frame */
 #result { display: none; width: 100%; }

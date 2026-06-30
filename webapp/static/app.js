@@ -55,33 +55,29 @@ var quoteTimer = null;
 var currentTaskId = null;        // 当前运行的任务 ID
 var evtSource = null;            // SSE 连接
 var QUOTES = [
-  "正在翻小红书… 你负责偷懒，我负责做攻略 ✨",
-  "让 AI 替你卷，你只管出发 🚗",
-  "别急，好的路线值得等 🗺️",
-  "大数据已经把这届网友的宝藏路线都扒出来了 🔍",
-  "懒人改变世界——包括旅行方式 🌍",
-  "正在避开所有排队两小时的网红踩雷点 🙅‍♂️",
-  "打工人，你的无痛旅行攻略正在打包中 📦",
-  "特种兵还是度假党？AI 正在帮你做最优解 ⚖️",
-  "攻略我来做，你只需要负责发朋友圈美照 📸",
-  "路线正在疯狂对齐中，马上出发！🚀",
-  "世界那么大，懒得做攻略？交给我啦 🗺️",
-  "正在为您挑选本地人私藏的宝藏街角 ☕",
-  "不做冤大头，避雷指南已加入豪华午餐 🍋",
-  "身体和灵魂，总有一个在期待这份攻略 💫",
-  "正在用大数据为你编织一场说走就走的梦 🦄",
-  "行程规划中…… 已经闻到远方的空气了 🍃",
-  "不塞车、不排队、不踩雷的完美路线正在生成中 🚗"
+  "📕 正在翻阅小红书的宝藏笔记...",
+  "🏛️ 整理景点数据和真实用户反馈中...",
+  "🍜 搜索本地人私藏的美食路线...",
+  "🗺️ 计算各景点之间的最优路线...",
+  "💰 查询飞猪实时机票/高铁/酒店价格...",
+  "⏳ 综合预算和人数做最优行程规划...",
+  "🎫 查询景点门票价格和开放信息...",
+  "☀️ 查看目的地天气预报...",
+  "🏨 搜索顺路又实惠的住宿...",
+  "🤝 避雷过滤中——全网黑的餐厅已剔除...",
+  "📊 多方案路线辩论中，选最好走的那条...",
+  "🎨 正在生成精美图文手册和交互地图...",
+  "📦 您专属的旅行攻略打包中，马上就好..."
 ];
 
 var LOADING_TEMPLATE = [
   '<div class="loader"></div>',
-  '<p class="loading-title">🤖 AI 正在规划你的专属攻略...</p>',
-  '<p class="hint">正在进行多源分析与路线优化，预计需要 1-2 分钟</p>',
+  '<p class="loading-title">🤖 正在规划你的专属攻略...</p>',
+  '<p class="hint" id="loadingHint">读取小红书网友路线中...</p>',
   '<div class="quote-container">',
-  '  <span class="quote-text" id="quoteText">正在翻小红书… 你负责偷懒，我负责做攻略 ✨</span>',
+  '  <span class="quote-text" id="quoteText">📕 正在翻阅小红书的宝藏笔记...</span>',
   '</div>',
-  '<div id="stepProgress" style="margin:12px auto 0;max-width:320px;text-align:center;font-size:12px;color:#6366f1;font-weight:600;min-height:20px;"></div>',
+  '<div id="stepProgress" style="margin:12px auto 0;max-width:340px;text-align:center;font-size:12px;color:#6366f1;font-weight:600;min-height:20px;"></div>',
   '<div class="progress-bar"><div class="progress-bar-inner"></div></div>'
 ].join('\n');
 
@@ -178,18 +174,25 @@ async function generate(){
   var people = peopleVal ? parseInt(peopleVal, 10) : null;
   var budget = budgetVal ? parseFloat(budgetVal) : null;
 
+  // 获取酒店每晚预算区间
+  var hotelMinVal = document.getElementById('hotelBudgetMin').value.trim();
+  var hotelMaxVal = document.getElementById('hotelBudgetMax').value.trim();
+  var hotelBudgetMin = hotelMinVal ? parseInt(hotelMinVal, 10) : 300;
+  var hotelBudgetMax = hotelMaxVal ? parseInt(hotelMaxVal, 10) : 500;
+
   // 获取定制启用的步骤
   var steps = [];
   if(document.getElementById('step_research').checked) steps.push('research');
   if(document.getElementById('step_enrich').checked) steps.push('enrich');
   if(document.getElementById('step_distance').checked) steps.push('distance');
+  if(document.getElementById('step_flyai').checked) steps.push('flyai');
   if(document.getElementById('step_tips').checked) steps.push('tips');
 
   try{
     var resp=await fetch('/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({goal:goal, steps:steps, people:people, budget:budget})
+      body:JSON.stringify({goal:goal, steps:steps, people:people, budget:budget, hotel_budget_min:hotelBudgetMin, hotel_budget_max:hotelBudgetMax})
     });
     var data=await resp.json();
     var taskId=data.task_id;
@@ -205,11 +208,14 @@ async function generate(){
     evtSource = new EventSource('/stream/'+taskId);
     evtSource.onmessage = function(event) {
       var msg = JSON.parse(event.data);
-      // 更新进度提示与步骤显示
+      // 更新进度提示与步骤显示 - 去掉后端传来的 "Step X/Y:" 前缀，避免与进度条重复
+      var displayMsg = msg.message;
+      // 简单截掉 "Step X/Y: " 或 "Step X/Y " 前缀
+      displayMsg = displayMsg.replace(/^Step\s+\d+\/\d+[：:\s]+/, '');
       var quoteEl = document.getElementById('quoteText');
-      if(quoteEl) quoteEl.innerText = msg.message;
+      if(quoteEl) quoteEl.innerText = '⏳ ' + displayMsg;
       var stepEl = document.getElementById('stepProgress');
-      if(stepEl && !msg.done) stepEl.innerText = '⏳ ' + msg.message;
+      if(stepEl && !msg.done) stepEl.innerText = '⏳ ' + displayMsg;
       if(msg.done) {
         evtSource.close();
         evtSource = null;

@@ -33,4 +33,9 @@ def _load_env_key(key_name: str) -> str:
 
 DEEPSEEK_API_KEY = _load_env_key("DEEPSEEK_API_KEY")
 AMAP_KEY = _load_env_key("AMAP_KEY")
+
+# 可选：无水印图片源 API Keys（不配置则自动跳过）
+UNSPLASH_ACCESS_KEY = _load_env_key("UNSPLASH_ACCESS_KEY")     # https://unsplash.com/developers
+PIXABAY_API_KEY = _load_env_key("PIXABAY_API_KEY")              # https://pixabay.com/api/docs/
+
 BASE_DIR = _BASE_DIR

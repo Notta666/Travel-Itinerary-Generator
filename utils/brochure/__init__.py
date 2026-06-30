@@ -274,6 +274,18 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             day_num = day["day"]
             hc = ""
             for hi, h in enumerate(hotels[:3]):
+                # 检查并设置 _main_pic 字段
+                main_pic = h.get("_main_pic") or h.get("main_pic") or ""
+                if not main_pic:
+                    try:
+                        from utils.image_fetcher import get_photos
+                        fallback_photos = get_photos(h["name"], day.get("accommodation_city", city), category="")
+                        if fallback_photos:
+                            main_pic = fallback_photos[0]
+                    except Exception:
+                        pass
+                h["_main_pic"] = main_pic
+
                 cost_val = h.get("cost", "")
                 cost_display = f"¥{cost_val}/晚" if cost_val and cost_val != "?" else "暂无报价"
                 cost_class = "hpr" if cost_val and cost_val != "?" else "hpr no-price"
@@ -284,9 +296,14 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 tel_val = h.get("tel", "")
                 tel_html = f'<span class="htel">📞 {tel_val}</span>' if tel_val else ""
                 selected_class = "selected" if hi == 0 else ""
+                
+                # 酒店主图
+                pic_html = f'<img class="hpic" src="{main_pic}" alt="" onerror="this.style.display=\'none\'">' if main_pic else ""
+                
                 hc += (
                     f'<div class="hc {selected_class}" data-day="{day_num}" data-idx="{hi}" onclick="selectHotel({day_num},{hi})">'
                     f'<div class="hc-check">{"✓" if hi == 0 else ""}</div>'
+                    f'{pic_html}'
                     f'<div class="hc-info">'
                     f'<div class="hc-row1"><span class="hn">{h["name"]}</span><span class="hsg">⭐{rating_display}</span></div>'
                     f'<div class="hc-row2"><span class="{cost_class}">{cost_display}</span>'
@@ -486,6 +503,94 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         <p>{" | ".join(tg_parts)}</p>
     </div>"""
 
+    # ─── 一键预订总览 ───────────────────────────
+    _bk = flyai_prices or {}
+    _booking_items = []
+    
+    # 打印调试日志确认传入的 flyai_prices 结构与内容
+    print(f"[DEBUG] utils/brochure/__init__.py: flyai_prices available = {_bk.get('available')}")
+    print(f"[DEBUG] utils/brochure/__init__.py: flight keys = {list(_bk.get('flight', {}).keys()) if _bk.get('flight') else 'None'}")
+    print(f"[DEBUG] utils/brochure/__init__.py: train keys = {list(_bk.get('train', {}).keys()) if _bk.get('train') else 'None'}")
+    print(f"[DEBUG] utils/brochure/__init__.py: hotel keys = {list(_bk.get('hotel', {}).keys()) if _bk.get('hotel') else 'None'}")
+    print(f"[DEBUG] utils/brochure/__init__.py: ticket count = {len(_bk.get('tickets', {})) if _bk.get('tickets') else 0}")
+    
+    has_bk_data = _bk.get("available") or any(k in _bk for k in ("flight", "train", "hotel", "tickets"))
+    if has_bk_data:
+        # 机票
+        _fd = _bk.get("flight", {})
+        if _fd.get("items"):
+            _bf = _fd["items"][0]; _pf = _bf["price"]; _jf = _bf.get("jump_url","")
+            _sf = _fd.get("source","live"); _lf = "飞猪实时 🟢" if _sf=="live" else "缓存价 🟡"
+            _segs = _bf.get("segments") or _bf.get("journeys") or []
+            _fdet = ""
+            if _segs:
+                _s = _segs[0]
+                _dt = _s.get("dep_time") or _s.get("depDateTime") or ""
+                _dt = _dt[11:16] if len(_dt) > 15 else _dt
+                _at = _s.get("arr_time") or _s.get("arrDateTime") or ""
+                _at = _at[11:16] if len(_at) > 15 else _at
+                _flight_no = _s.get("flight_no") or _s.get("marketingTransportNo") or ""
+                _airline = _s.get("airline") or _s.get("marketingTransportName") or ""
+                _dep_airport = _s.get("dep_airport") or _s.get("depStationName") or ""
+                _arr_airport = _s.get("arr_airport") or _s.get("arrStationName") or ""
+                _dep_terminal = _s.get("dep_terminal") or _s.get("depTerm") or ""
+                _arr_terminal = _s.get("arr_terminal") or _s.get("arrTerm") or ""
+                _fdet = f'<div class="bi-detail">{_flight_no} {_airline} · {_dep_airport}{" T"+str(_dep_terminal) if _dep_terminal else ""} {_dt} → {_arr_airport}{" T"+str(_arr_terminal) if _arr_terminal else ""} {_at}</div>'
+            _bbtn = f'<a class="btn-booking" href="{_jf}" target="_blank" rel="noopener">✈️ 预订 ¥{_pf:.0f}</a>' if _jf else f'<span class="booking-no-link">✈️ ¥{_pf:.0f}</span>'
+            _booking_items.append(f'<div class="bi-row"><div class="bi-icon">✈️</div><div class="bi-info"><div class="bi-name">机票 · {start_city or ""} → {city}</div>{_fdet}<div class="bi-meta">{_lf} · {_fd.get("count",0)} 个选项</div></div><div class="bi-action">{_bbtn}</div></div>')
+        # 高铁
+        _td = _bk.get("train", {})
+        if _td.get("items"):
+            _bt = _td["items"][0]; _pt = _bt["price"]; _jt = _bt.get("jump_url","")
+            _st = _td.get("source","live"); _lt = "飞猪实时 🟢" if _st=="live" else "缓存价 🟡"
+            _segs = _bt.get("segments") or _bt.get("journeys") or []
+            _tdet = ""
+            if _segs:
+                _s = _segs[0]
+                _dt = _s.get("dep_time") or _s.get("depDateTime") or ""
+                _dt = _dt[11:16] if len(_dt) > 15 else _dt
+                _at = _s.get("arr_time") or _s.get("arrDateTime") or ""
+                _at = _at[11:16] if len(_at) > 15 else _at
+                _train_no = _s.get("train_no") or _s.get("marketingTransportNo") or ""
+                _seat_class = _s.get("seat_class") or _s.get("seatClassName") or ""
+                _dep_station = _s.get("dep_station") or _s.get("depStationName") or ""
+                _arr_station = _s.get("arr_station") or _s.get("arrStationName") or ""
+                _duration_min = _s.get("duration_min") or _s.get("duration") or ""
+                _tdet = f'<div class="bi-detail">{_train_no} {_seat_class} · {_dep_station} {_dt} → {_arr_station} {_at} ({_duration_min}min)</div>'
+            _tbtn = f'<a class="btn-booking" href="{_jt}" target="_blank" rel="noopener">🚄 预订 ¥{_pt:.0f}</a>' if _jt else f'<span class="booking-no-link">🚄 ¥{_pt:.0f}</span>'
+            _booking_items.append(f'<div class="bi-row"><div class="bi-icon">🚄</div><div class="bi-info"><div class="bi-name">高铁 · {start_city or ""} → {city}</div>{_tdet}<div class="bi-meta">{_lt} · {_td.get("count",0)} 个选项</div></div><div class="bi-action">{_tbtn}</div></div>')
+        # 酒店
+        _hd = _bk.get("hotel", {})
+        if _hd.get("items"):
+            _bh = _hd["items"][0]
+            _hbtn = f'<a class="btn-booking" href="{_bh.get("jump_url","")}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
+            _booking_items.append(f'<div class="bi-row"><div class="bi-icon">🏨</div><div class="bi-info"><div class="bi-name">{_bh["name"]}</div><div class="bi-meta">¥{_bh["price"]:.0f}/晚 · 飞猪</div></div><div class="bi-action">{_hbtn}</div></div>')
+        # 门票
+        _tks = _bk.get("tickets", {})
+        if _tks:
+            for _day in (itinerary or []):
+                for _poi in _day.get("pois", []):
+                    _n = _poi["name"]; _tdi = _tks.get(_n, {})
+                    if _tdi and _tdi.get("source") != "fail":
+                        _pm = _tdi.get("price_min")
+                        if _pm:
+                            _bu = _tdi.get("booking_url","")
+                            _tkbtn = f'<a class="btn-booking" href="{_bu}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">🎫 预订 ¥{_pm}</a>' if _bu else f'<span class="booking-no-link">🎫 ¥{_pm}</span>'
+                            _booking_items.append(f'<div class="bi-row"><div class="bi-icon">🎫</div><div class="bi-info"><div class="bi-name">{_n}</div><div class="bi-meta">¥{_tdi.get("price_max", _pm) if _tdi.get("price_max") != _pm else _pm}/人</div></div><div class="bi-action">{_tkbtn}</div></div>')
+    
+    print(f"[DEBUG] utils/brochure/__init__.py: Generated {len(_booking_items)} booking items: {_booking_items}")
+    
+    booking_html = ""
+    if _booking_items:
+        _navail = sum(1 for b in _booking_items if "btn-booking" in b)
+        booking_html = f"""
+    <div class="sec booking-section">
+        <h2>📋 一键预订总览</h2>
+        <div class="booking-intro">共 {len(_booking_items)} 项 · {_navail} 项可在线预订</div>
+        <div class="booking-list">{''.join(_booking_items[:15])}</div>
+        <div class="booking-footer">点击「预订」跳转飞猪/携程完成下单</div>
+    </div>"""
+
     ts = time.strftime("%Y-%m-%d")
 
     cover_extra = []
@@ -509,6 +614,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         tips_html=thtml,
         weather_html=whtml,
         budget_html=budget_html,
+        booking_html=booking_html,
         food_highlights_html=fh_html,
         transport_html=tg_html,
         day_map_labels=day_map_labels,

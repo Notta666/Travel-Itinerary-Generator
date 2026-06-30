@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="AI旅行攻略", version="2.2.0")
+app = FastAPI(title="AI旅行攻略", version="2.4.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Static files
@@ -162,7 +162,7 @@ def _is_cancelled(task_id):
         return evt is not None and evt.is_set()
 
 
-def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budget=None):
+def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budget=None, hotel_budget_min=300, hotel_budget_max=500):
     """Run the pipeline in a background thread with SSE progress."""
     try:
         from pipeline.run_pipeline import _parse_goal, run_pipeline
@@ -202,6 +202,10 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
 
         prefs["people_count"] = ui_people
         prefs["budget"] = ui_budget_str
+
+        # 酒店每晚预算区间（默认300~500）
+        prefs["hotel_budget_min"] = hotel_budget_min
+        prefs["hotel_budget_max"] = hotel_budget_max
 
         # Set customized step list
         if enabled_steps is not None:
@@ -261,6 +265,8 @@ async def generate(data: dict):
     enabled_steps = data.get("steps")
     people = data.get("people")
     budget = data.get("budget")
+    hotel_budget_min = data.get("hotel_budget_min", 300)
+    hotel_budget_max = data.get("hotel_budget_max", 500)
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
     task_id = uuid.uuid4().hex[:12]
@@ -268,7 +274,7 @@ async def generate(data: dict):
     # Run in background thread (non-blocking)
     thread = threading.Thread(
         target=_run_pipeline_task,
-        args=(task_id, goal, enabled_steps, people, budget),
+        args=(task_id, goal, enabled_steps, people, budget, hotel_budget_min, hotel_budget_max),
         daemon=True,
     )
     thread.start()

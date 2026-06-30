@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2.2.0">
+<link rel="stylesheet" href="/static/style.css?v=2.4.0">
 </head>
 <body>
 
@@ -15,12 +15,13 @@
   <div class="header">
     <div class="badges">
       <span class="badge">🤖 AI 智能规划</span>
-      <span class="badge highlight">📸 小红书美食避雷</span>
-      <span class="badge">🗺️ Leaflet 交互路线</span>
+      <span class="badge highlight">📸 小红书避雷</span>
+      <span class="badge">🗺️ 交互地图</span>
+      <span class="badge flyai">✈️ 飞猪实时价</span>
     </div>
-    <div class="title-tag">Smart Trip Planner</div>
-    <div class="title-main">随心游 <span>AI旅行攻略</span></div>
-    <div class="title-sub">说出你的旅行想法，一键生成图文并茂的手账式攻略</div>
+    <div class="title-tag">FlyAI · Smart Trip Planner</div>
+    <div class="title-main">随心游 <span>AI 旅行攻略</span></div>
+    <div class="title-sub">一句话说出你的旅行想法，剩下的交给 AI</div>
   </div>
 
   <div class="input-glass">
@@ -35,14 +36,25 @@
       <button id="genBtn" onclick="generate()">规划行程 ✨</button>
     </div>
 
-    <div class="params-row">
-      <div class="param-item">
-        <label for="peopleInput">👥 出行人数 (人)</label>
-        <input id="peopleInput" type="number" min="1" placeholder="默认 2 人">
-      </div>
-      <div class="param-item">
-        <label for="budgetInput">💰 总预算 (元)</label>
-        <input id="budgetInput" type="number" min="0" placeholder="填写总预算，如 5000（留空按 1500/人/天估算）">
+    <!-- 参数区：人数 / 总预算 / 酒店每晚预算 -->
+    <div class="params-area">
+      <div class="params-row">
+        <div class="param-item">
+          <label for="peopleInput"><span class="param-icon">👥</span> 人数</label>
+          <input id="peopleInput" type="number" min="1" placeholder="默认 2 人">
+        </div>
+        <div class="param-item">
+          <label for="budgetInput"><span class="param-icon">💰</span> 总预算</label>
+          <input id="budgetInput" type="number" min="0" placeholder="如 5000（留空自动估算）">
+        </div>
+        <div class="param-item hotel-budget-item">
+          <label><span class="param-icon">🏨</span> 住宿 <span class="label-sub">/晚</span></label>
+          <div class="hotel-range">
+            <input id="hotelBudgetMin" type="number" min="0" value="300" placeholder="最低">
+            <span class="range-bar"></span>
+            <input id="hotelBudgetMax" type="number" min="0" value="500" placeholder="最高">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -50,9 +62,9 @@
     <div class="pipeline-customization">
       <div class="custom-title" onclick="toggleCustomization()">
         <span>⚙️ Pipeline 步骤配置 (非核心步骤可选)</span>
-        <span id="toggleIcon">➖</span>
+        <span id="toggleIcon">➕</span>
       </div>
-      <div class="custom-options" id="customOptions">
+      <div class="custom-options" id="customOptions" style="display: none;">
         <label class="option-item">
           <input type="checkbox" id="step_research" checked>
           <div class="option-details">
@@ -75,6 +87,13 @@
           </div>
         </label>
         <label class="option-item">
+          <input type="checkbox" id="step_flyai" checked>
+          <div class="option-details">
+            <span class="option-name">飞猪实时物价 ✈️ (Step 5.5)</span>
+            <span class="option-desc">查询机票/高铁/酒店实时价格，精确规划预算（需已配置 FlyAI Key）</span>
+          </div>
+        </label>
+        <label class="option-item">
           <input type="checkbox" id="step_tips" checked>
           <div class="option-details">
             <span class="option-name">出行建议与天气 🌤️ (Step 8.5)</span>
@@ -94,19 +113,19 @@
 
   <div class="grid">
     <div class="card"><div class="card-icon">📖</div><div class="card-title">精美图文手册</div><div class="card-desc">自动配图生成卡片行程，打卡避雷一应俱全</div></div>
-    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰展示</div></div>
+    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰切换</div></div>
     <div class="card"><div class="card-icon">🍳</div><div class="card-title">真实美食推荐</div><div class="card-desc">融合小红书双通道调研，扫街美食精挑细选</div></div>
-    <div class="card"><div class="card-icon">⚖️</div><div class="card-title">辩论式路线优化</div><div class="card-desc">高效派与悠闲派多轮对抗演算法，不走冤枉路</div></div>
+    <div class="card"><div class="card-icon">✈️</div><div class="card-title">飞猪实时物价</div><div class="card-desc">机票/高铁/酒店实时价格查询，预算精准可控</div></div>
   </div>
 
   <div id="loading">
     <div class="loader"></div>
-    <p class="loading-title">🤖 AI 正在规划你的专属攻略...</p>
-    <p class="hint">正在进行多源分析与路线优化，预计需要 1-2 分钟</p>
+    <p class="loading-title">🤖 正在规划你的专属攻略...</p>
+    <p class="hint" id="loadingHint">读取小红书网友路线中...</p>
     <div class="quote-container">
-      <span class="quote-text" id="quoteText">正在翻小红书… 你负责偷懒，我负责做攻略 ✨</span>
+      <span class="quote-text" id="quoteText">📕 正在翻阅小红书的宝藏笔记...</span>
     </div>
-    <div id="stepProgress" style="margin:12px auto 0;max-width:320px;text-align:center;font-size:12px;color:#6366f1;font-weight:600;min-height:20px;"></div>
+    <div id="stepProgress" style="margin:12px auto 0;max-width:340px;text-align:center;font-size:12px;color:#6366f1;font-weight:600;min-height:20px;"></div>
     <div class="progress-bar"><div class="progress-bar-inner"></div></div>
   </div>
 
@@ -153,10 +172,10 @@
 
   <div class="footer">
     <span class="brand">Hermes Travel Engine</span>
-    <span>v2.2.0</span>
+    <span>v2.4.0</span>
   </div>
 </div>
 
-<script src="/static/app.js?v=2.2.0"></script>
+<script src="/static/app.js?v=2.4.0"></script>
 </body>
 </html>

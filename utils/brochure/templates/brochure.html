@@ -43,6 +43,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-w
 .t.o{background:rgba(255,107,53,0.1);color:#ff6b35;border:1px solid rgba(255,107,53,0.2);}
 .t.ti{background:rgba(148,163,184,0.1);color:#94a3b8;border:1px solid rgba(148,163,184,0.2);}
 .t.tr{background:rgba(255,107,53,0.08);color:#ff6b35;border:1px solid rgba(255,107,53,0.15);}
+.t.ticket{background:rgba(239,68,68,0.08);color:#ef4444;border:1px solid rgba(239,68,68,0.2);}
 .ad{font-size:12px;color:var(--text3);margin-bottom:4px;}
 .nt{font-size:12px;color:var(--text2);line-height:1.5;}
 
@@ -91,16 +92,37 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-w
 .hc-row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
 .hc-row2{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
 .hn{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px;}
-.hsg{font-size:12px;color:#f59e0b;font-weight:600;flex-shrink:0;}
-.hpr{font-size:13px;color:#10b981;font-weight:700;}
+.hsg{font-size:14px;color:#f59e0b;font-weight:600;flex-shrink:0;letter-spacing:2px;}
+.hpr{font-size:14px;color:#ea580c;font-weight:700;}
 .hpr.no-price{color:var(--text3);font-weight:400;font-style:italic;}
+/* 飞猪预订按钮 */
+.btn-book{display:inline-block;margin-top:8px;padding:5px 14px;border-radius:8px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:11px;font-weight:600;text-decoration:none;transition:all .25s ease;border:1px solid rgba(255,255,255,0.12);}
+.btn-book:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(249,115,22,0.35);background:linear-gradient(135deg,#ea580c,#c2410c);}
+.btn-book:active{transform:translateY(0);}
 .hdi{font-size:11px;color:var(--text3);padding:2px 8px;background:var(--tbg);border-radius:6px;}
 .htel{font-size:11px;color:var(--text2);}
+.hdy{font-size:11px;color:var(--text3);padding:2px 8px;background:rgba(16,185,129,0.08);border-radius:6px;border:1px solid rgba(16,185,129,0.15);}
+.hpic{width:56px;height:56px;border-radius:10px;object-fit:cover;flex-shrink:0;margin-left:8px;border:1px solid var(--border2);}
+
+/* 飞猪预订按钮 */
+.btn-book{display:inline-block;margin-top:8px;padding:6px 16px;font-size:12px;font-weight:600;border-radius:8px;background:linear-gradient(135deg,#ff6a00,#ee0979);color:#fff;text-decoration:none;transition:all .3s ease;border:none;cursor:pointer;text-align:center;}
+.btn-book:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(238,9,121,0.4);}
 
 /* 预算概览 */
 .bs{background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(16,185,129,0.02));border:1px solid rgba(16,185,129,0.12);}
 .bs h2{font-size:18px;margin-bottom:14px;}
 .bg{display:flex;flex-direction:column;gap:8px;}
+/* 价格数据来源颜色区分 */
+.price-live{color:#22c55e;font-weight:600;}
+.price-cache{color:#eab308;font-weight:600;}
+.price-est{color:var(--text2);}
+.bi .bv .price-live::after{content:' 🟢';font-size:10px;}
+.bi .bv .price-cache::after{content:' 🟡';font-size:10px;}
+.bi .bv .price-est::after{content:' ⚪';font-size:10px;}
+/* 飞猪酒店标签 */
+.flyai-tag{display:inline-block;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;margin-right:4px;font-weight:600;vertical-align:middle;}
+.flyai-price{color:#f59e0b;}
+.hpr.flyai-price{color:#f59e0b;}
 .bi{display:flex;align-items:center;gap:8px;font-size:13px;}
 .bn{width:50px;flex-shrink:0;color:var(--text2);}
 .bv{width:70px;text-align:right;font-weight:600;color:var(--text);}
@@ -112,6 +134,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-w
 .tg h2{font-size:20px;margin-bottom:12px;}
 .tg p{font-size:14px;color:var(--text2);line-height:1.8;}
 .ft{text-align:center;padding:40px 20px;font-size:12px;color:var(--text3);}
+
+/* 一键预订总览 */
+.booking-section{background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.04));border:1px solid rgba(99,102,241,0.15);}
+.booking-section h2{font-size:18px;margin-bottom:8px;}
+.booking-intro{font-size:12px;color:var(--text3);margin-bottom:14px;}
+.booking-list{display:flex;flex-direction:column;gap:8px;}
+.bi-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;background:var(--card);border:1px solid var(--border);transition:all .2s;}
+.bi-row:hover{border-color:rgba(99,102,241,0.3);}
+.bi-icon{font-size:20px;width:32px;text-align:center;flex-shrink:0;}
+.bi-info{flex:1;min-width:0;}
+.bi-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bi-meta{font-size:11px;color:var(--text3);margin-top:2px;}
+.bi-detail{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;}
+.bi-action{flex-shrink:0;}
+.btn-booking{display:inline-block;padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;transition:all .25s;border:none;cursor:pointer;}
+.btn-booking:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(99,102,241,0.35);}
+.booking-no-link{font-size:11px;color:var(--text3);white-space:nowrap;}
+.booking-footer{font-size:11px;color:var(--text3);text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
 
 /* 地图 Tab */
 .map-tabs{display:flex;gap:6px;padding:8px 24px 0;}
@@ -147,6 +187,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-w
 
 {{ budget_html|safe }}
 
+{{ booking_html|safe }}
+
 <!-- 交互式地图（按日切换） -->
 <div class="map-section">
     <h2>🗺️ 行程地图</h2>
@@ -169,6 +211,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-w
 {{ transport_html|safe }}
 
 <div class="ft">Generated by Hermes AI · 高德地图数据支持 · {{ generated_ts }}</div>
+<div class="ft flyai-powered">🏨 酒店数据由 <a href="https://flyai.open.fliggy.com" target="_blank" rel="noopener" style="color:#f97316;text-decoration:none;">飞猪AI开放平台 (FlyAI)</a> 提供 · 点击「🛒 飞猪预订」跳转预订 · 推广者ID: 关联API Key</div>
 
 <script>
 function tt(){
