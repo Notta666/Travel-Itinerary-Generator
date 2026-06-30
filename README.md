@@ -207,13 +207,19 @@ AMAP_KEY=your-gaode-api-key-here
 
 ---
 
-## ⚠️ 注意事项
+## ⚠️ 法律声明与注意事项
+
+### 📜 法律声明
+
+本项目**不包含任何爬虫代码**，小红书调研功能通过用户**自行安装的 Chrome 浏览器 + OpenCLI 扩展**实现，本质上是模拟用户手动浏览公开网页的行为，数据来源于用户个人浏览会话中的公开信息。用户需自行确保使用方式符合相关平台的服务条款及当地法律法规。
+
+### ⚠️ 注意事项
 
 1. **API Key 安全**：`.env` 文件已加入 `.gitignore`，切勿提交真实 Key（含硬编码 Key 的提交会立即暴露）
 2. **高德 API 限额**：个人开发者每日约 5000 次调用，个人使用足够
 3. **DeepSeek API 费用**：deepseek-chat 模型价格低廉，单次攻略约 ¥0.1-0.3
-4. **小红书调研**：需 Chrome 浏览器 + OpenCLI 扩展，断连时自动重连；如不可用则降级为手动POI模式
-5. **POI重名与跨城偏差问题**：如"江南天池"可能定位到广西，代码已有城市偏差检测+V5搜索兜底。在多城市行程中，系统能够通过 LLM 自动将景点和美食映射归入其所属具体城市限制下地理编码，防止如“顺德清晖园”匹配到广州同名或类似商户。
+4. **小红书调研**：需 Chrome 浏览器 + OpenCLI 扩展，通过用户本机浏览器会话访问小红书公开页面。**不涉及侵入式爬虫、不绕过登录验证、不批量抓取数据**。如 OpenCLI 不可用则自动降级为手动 POI 模式
+5. **POI重名与跨城偏差问题**：如"江南天池"可能定位到广西，代码已有城市偏差检测+V5搜索兜底。在多城市行程中，系统能够通过 LLM 自动将景点和美食映射归入其所属具体城市限制下地理编码，防止如"顺德清晖园"匹配到广州同名或类似商户。
 6. **图片获取**：高德图片为空时自动降级到百度/Bing搜索，7天文件缓存
 
 ---
@@ -227,6 +233,7 @@ AMAP_KEY=your-gaode-api-key-here
 - [**Drfccv/AI-Trip-Planner**](https://github.com/Drfccv/AI-Trip-Planner) — 基于 LLM+高德 API 的旅行规划器，验证了技术路线的可行性
 - [**Panniantong/agent-reach**](https://github.com/Panniantong/agent-reach) — AI Agent 互联网渠道工具，提供小红书/B站/Reddit 等调研能力
 - [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，支撑小红书内容采集
+- [**NanmiCoder/MediaCrawler**](https://github.com/NanmiCoder/MediaCrawler) — 多平台自媒体数据采集工具（54K★），其架构设计为后续替代 OpenCLI 提供参考
 
 ### 技术依赖
 
