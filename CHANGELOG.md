@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - `pipeline/run_pipeline.py`: `signal.signal()` calls (lines 704-706, 808) wrapped with main-thread guard; `original_handler` defaults to `None` and only restored when previously captured.
 
+## [2.1.2] - 2026-06-30
+### Fixed
+- **DeepSeek JSON 被截断**：7 天以上行程输出 JSON 超过 max_tokens 被截断，解析失败后降级到规则引擎生成通用垃圾行程。Bull/Bear 提至 6000、Fusion 提至 8000（拉满 DeepSeek 上限）
+- **预算输入框歧义**：placeholder 写"默认按 1500/人/天计算"让人误解为日预算，实际是总预算。改为"填写总预算，如 5000（留空按 1500/人/天估算）"
+
+### Changed
+- `pipeline/steps/planner.py`：max_tokens Bull/Bear 4000→6000，Fusion 6000→8000
+
 ## [2.1.1] - 2026-06-30
 ### Fixed
 - **图片出图率低**：`_fetch_photos()` 全局 `_last_fetch_time` 无锁竞争导致多线程并发时限流失效，部分请求被限流返回空。新增 `threading.Lock` 保护限流状态，Web 搜索引擎额外加 0.15s 间隔避免触发风控
