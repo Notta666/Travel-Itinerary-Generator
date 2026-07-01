@@ -117,8 +117,7 @@ Travel-Itinerary-Generator/
 │   │   └── templates/         #   brochure.html 模板
 │   ├── config.py              # 统一 API Key 管理
 │   ├── llm.py                 # LLMClient 多后端抽象（DeepSeek + 占位）
-│   ├── research.py            # 小红书调研工具（Playwright → OpenCLI 双引擎）
-│   ├── playwright_xhs.py      # Playwright 浏览器自动化引擎（替代 OpenCLI）
+│   ├── research.py            # 小红书调研工具（OpenCLI → LLM 降级）
 │   ├── tips.py                # 出行建议生成器
 │   ├── weather.py             # 高德天气查询
 │   ├── image_fetcher.py       # 多引擎图片获取（高德→360→百度→Bing）
@@ -165,7 +164,7 @@ Travel-Itinerary-Generator/
 
 | 数据 | 来源 | 优先级 |
 |:---|:---|:---:|
-| 景点/美食 | 小红书（Playwright 浏览器自动化 → OpenCLI 降级） | 🥇 主数据源 |
+| 景点/美食 | 小红书（OpenCLI 浏览器自动化 → LLM 降级） | 🥇 主数据源 |
 | POI坐标验证 | 高德地图 API | 🥈 辅助验证 |
 | 酒店 | 高德周边搜索 | 🥈 |
 | 天气 | 高德天气 API | 🥈 |
@@ -215,9 +214,9 @@ AMAP_KEY=your-gaode-api-key-here
 2. **WebApp 本地访问**：默认绑定 `127.0.0.1:8080`，仅本机可访问。如需局域网共享，设置环境变量 `CORS_ORIGINS=*` 并修改 `host` 配置
 3. **高德 API 限额**：个人开发者每日约 5000 次调用，个人使用足够
 4. **DeepSeek API 费用**：deepseek-chat 模型价格低廉，单次攻略约 ¥0.1-0.3
-4. **小红书调研**：基于 Playwright（Chromium 浏览器自动化），需执行 `playwright install chromium` 并运行交互式登录保存登录态。如 Playwright 不可用则自动降级为 OpenCLI + Chrome 扩展。**不涉及侵入式爬虫、不绕过登录验证、不批量抓取数据**
-5. **POI重名与跨城偏差问题**：如"江南天池"可能定位到广西，代码已有城市偏差检测+V5搜索兜底。在多城市行程中，系统能够通过 LLM 自动将景点和美食映射归入其所属具体城市限制下地理编码，防止如"顺德清晖园"匹配到广州同名或类似商户。
-6. **图片获取**：高德图片为空时自动降级到百度/Bing搜索，7天文件缓存
+5. **小红书调研**：基于 OpenCLI（Chrome 浏览器扩展），模拟用户手动浏览公开笔记。首次使用需安装 Chrome 扩展。**不涉及侵入式爬虫、不绕过登录验证、不批量抓取数据**
+6. **POI重名与跨城偏差问题**：如"江南天池"可能定位到广西，代码已有城市偏差检测+V5搜索兜底。在多城市行程中，系统能够通过 LLM 自动将景点和美食映射归入其所属具体城市限制下地理编码，防止如"顺德清晖园"匹配到广州同名或类似商户。
+7. **图片获取**：高德图片为空时自动降级到百度/Bing搜索，7天文件缓存
 
 ---
 
@@ -231,7 +230,7 @@ AMAP_KEY=your-gaode-api-key-here
 - [**Leaflet.js**](https://leafletjs.com/) — 开源交互式地图库（CDN 引入）
 - [**OpenStreetMap**](https://www.openstreetmap.org/) — 免费地图数据
 - [**FastAPI**](https://fastapi.tiangolo.com/) — Web 应用框架
-- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，Playwright 不可用时的降级小红书数据采集引擎
+- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，小红书数据采集引擎
 - [**Panniantong/agent-reach**](https://github.com/Panniantong/agent-reach) — AI Agent 互联网渠道工具，提供小红书/B站/Reddit 等调研能力
 
 ---
