@@ -37,6 +37,15 @@ xiaohongshu-downloads/
 data/references/amap_poicode.zip
 data/references/amap_poicode/
 
+# Dev & build artifacts
+refactor*.py
+ast_extractor.py
+update_transport_table.py
+**/*.bak
+reports/
+outputs/*.html
+IDEA.md
+
 # System & OS files
 .DS_Store
 Thumbs.db

@@ -33,6 +33,13 @@ def _load_env_key(key_name: str) -> str:
 
 DEEPSEEK_API_KEY = _load_env_key("DEEPSEEK_API_KEY")
 AMAP_KEY = _load_env_key("AMAP_KEY")
+OPENAI_API_KEY = _load_env_key("OPENAI_API_KEY")
+QWEN_API_KEY = _load_env_key("QWEN_API_KEY")
+
+# 多模态视觉模型配置 (任意兼容 OpenAI 格式的模型，如 gpt-4o, qwen-vl-max 等)
+VISION_API_KEY = _load_env_key("VISION_API_KEY") or OPENAI_API_KEY
+VISION_API_BASE = _load_env_key("VISION_API_BASE") or "https://api.openai.com/v1"
+VISION_MODEL = _load_env_key("VISION_MODEL") or "gpt-4o"
 
 # 可选：无水印图片源 API Keys（不配置则自动跳过）
 UNSPLASH_ACCESS_KEY = _load_env_key("UNSPLASH_ACCESS_KEY")     # https://unsplash.com/developers

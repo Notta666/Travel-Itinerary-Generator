@@ -10,7 +10,7 @@ Usage:
 
     # New API
     client = LLMClient(provider="deepseek")
-    result = client.call(system_prompt, user_prompt)
+    result = client.call(system_prompt, user_prompt, images=["data:image/jpeg;base64,..."])
 
     # Legacy backward-compatible shortcut
     result = call_deepseek(system_prompt, user_prompt)
@@ -54,8 +54,10 @@ class LLMClient:
         },
     }
 
-    def __init__(self, provider="deepseek", api_key=None):
+    def __init__(self, provider="deepseek", api_key=None, base_url=None, model=None):
         self.provider = provider
+        self.base_url = base_url
+        self._model_override = model
         if api_key:
             self.api_key = api_key
         else:
@@ -71,10 +73,12 @@ class LLMClient:
 
     @property
     def model(self):
+        if self._model_override:
+            return self._model_override
         return self.PROVIDERS.get(self.provider, {}).get("default_model", "deepseek-chat")
 
     def call(self, system_prompt, user_prompt, temperature=0.3, max_tokens=4000,
-             max_retries=3, response_format=None):
+             max_retries=3, response_format=None, **kwargs):
         """Execute a generation call against the configured provider.
 
         Parameters
@@ -96,13 +100,88 @@ class LLMClient:
             return self._call_deepseek(system_prompt, user_prompt, temperature,
                                        max_tokens, max_retries, response_format)
         elif self.provider == "openai":
-            # Placeholder — not yet implemented
-            raise NotImplementedError("OpenAI backend not yet implemented")
+            return self._call_openai(system_prompt, user_prompt, temperature,
+                                     max_tokens, max_retries, response_format, kwargs.get("images"))
         elif self.provider == "qwen":
             # Placeholder — not yet implemented
             raise NotImplementedError("Qwen backend not yet implemented")
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
+
+    # ---- OpenAI implementation ----
+
+    def _call_openai(self, system_prompt, user_prompt, temperature=0.3,
+                     max_tokens=4000, max_retries=3, response_format=None, images=None):
+        """Direct OpenAI API call with retry logic and Vision support."""
+        messages = [
+            {"role": "system", "content": system_prompt}
+        ]
+
+        if images:
+            content_list = [{"type": "text", "text": user_prompt}]
+            for img in images:
+                if img.startswith("http"):
+                    content_list.append({"type": "image_url", "image_url": {"url": img}})
+                else:
+                    if not img.startswith("data:image"):
+                        img = f"data:image/jpeg;base64,{img}"
+                    content_list.append({"type": "image_url", "image_url": {"url": img}})
+            messages.append({"role": "user", "content": content_list})
+        else:
+            messages.append({"role": "user", "content": user_prompt})
+
+        req_body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if response_format:
+            req_body["response_format"] = response_format
+        elif "json" in system_prompt.lower() or "json" in user_prompt.lower():
+            req_body["response_format"] = {"type": "json_object"}
+
+        body_bytes = json.dumps(req_body).encode("utf-8")
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                url = f"{self.base_url.rstrip('/')}/chat/completions" if self.base_url else "https://api.openai.com/v1/chat/completions"
+                req = urllib.request.Request(
+                    url,
+                    data=body_bytes,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                content = result["choices"][0]["message"]["content"]
+                if response_format or req_body.get("response_format"):
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError:
+                        return content
+                return content
+
+            except (urllib.error.URLError, json.JSONDecodeError, KeyError) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"OpenAI call failed (attempt {attempt+1}/{max_retries}): {e}, "
+                        f"retrying in {wait}s"
+                    )
+                    time.sleep(wait)
+                else:
+                    logger.error(
+                        f"OpenAI call failed (max retries {max_retries}): {e}"
+                    )
+                    raise RuntimeError(f"OpenAI API call failed: {e}") from e
+            except Exception as e:
+                raise RuntimeError(f"OpenAI API call error: {e}") from e
 
     # ---- DeepSeek implementation ----
 

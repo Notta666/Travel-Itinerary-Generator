@@ -41,7 +41,7 @@ class FlyAIApiClient:
 
     # 全局安装的 flyai CLI 路径
     CLI_BINARY = os.path.join(
-        os.environ.get("USERPROFILE", "C:\\Users\\Notta"),
+        os.environ.get("USERPROFILE", os.environ.get("HOME", "")),
         "AppData", "Roaming", "npm", "flyai.cmd"
     )
 
@@ -58,6 +58,7 @@ class FlyAIApiClient:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.ttls = {**self.DEFAULT_TTLS, **(ttls or {})}
         self._cli_available = None  # 懒检测
+        self.risk_blocked = False  # 标记是否已被风控封锁
 
     # ------------------------------------------------------------------
     # 环境检测
@@ -74,7 +75,7 @@ class FlyAIApiClient:
         try:
             r = subprocess.run(
                 [self.CLI_BINARY, "search-flight", "--help"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, timeout=5, errors="replace"
             )
             self._cli_available = r.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
@@ -129,6 +130,7 @@ class FlyAIApiClient:
             - 12秒超时防死锁
             - ANSI 转义符清洗
             - 正则提取首个 JSON 对象（防 npm 日志污染）
+            - 针对 429 Rate Limit 限流的指数退避重试逻辑
             - 完整异常捕获链
 
         Args:
@@ -137,42 +139,65 @@ class FlyAIApiClient:
         Returns:
             dict|list|None: 解析后的 JSON 结果
         """
+        if getattr(self, "risk_blocked", False):
+            return None
         cmd = [self.CLI_BINARY] + args
-        try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=12,
-            )
-            if res.returncode != 0:
-                stderr = (res.stderr or "")[:200]
-                logger.warning(
-                    f"FlyAI CLI 异常退出 (code={res.returncode}): {stderr}"
+        retries = 3
+        backoff = 2.0
+        
+        for attempt in range(retries):
+            try:
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    errors="replace"
                 )
-                return None
+                if res.returncode != 0:
+                    stderr = res.stderr or ""
+                    if "429" in stderr or "Rate limit exceeded" in stderr:
+                        if attempt < retries - 1:
+                            logger.warning(f"FlyAI CLI 触发限流 (429)，将在 {backoff} 秒后进行第 {attempt+1} 次重试...")
+                            time.sleep(backoff)
+                            backoff *= 2
+                            continue
+                    elif "403" in stderr or "451" in stderr or "Abnormal access behavior" in stderr:
+                        logger.warning(f"  ⚠️ FlyAI 接口触发平台风控限制，已自动切换为本地/高德数据源降级兜底。")
+                        self.risk_blocked = True
+                        return None
+                    
+                    stderr_snippet = stderr[:200]
+                    logger.warning(
+                        f"FlyAI CLI 异常退出 (code={res.returncode}): {stderr_snippet}"
+                    )
+                    return None
 
-            raw = res.stdout or ""
+                raw = res.stdout or ""
 
-            # 清洗 ANSI 转义字符
-            clean = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", raw).strip()
+                # 清洗 ANSI 转义字符
+                clean = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", raw).strip()
 
-            # 正则提取首个 JSON 对象/数组（防 npm 日志/版本提示等杂质）
-            json_match = re.search(r"(\{.*\}|\[.*\])", clean, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(1))
-            return json.loads(clean) if clean else None
+                # 正则提取首个 JSON 对象/数组（防 npm 日志/版本提示等杂质）
+                json_match = re.search(r"(\{.*\}|\[.*\])", clean, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group(1))
+                return json.loads(clean) if clean else None
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"FlyAI CLI 超时 (12s): {cmd[1]}")
-        except json.JSONDecodeError as e:
-            snippet = (res.stdout if "res" in dir() else "")[:100]
-            logger.error(f"FlyAI JSON 解析失败: {e} | 输出前100字符: {snippet}")
-        except FileNotFoundError:
-            logger.error("FlyAI CLI 未安装: 请执行 npm i -g @fly-ai/flyai-cli")
-            self._cli_available = False
-        except Exception as e:
-            logger.error(f"FlyAI CLI 异常: {e}")
+            except subprocess.TimeoutExpired:
+                logger.error(f"FlyAI CLI 超时 (30s): {cmd[1]}")
+                break
+            except json.JSONDecodeError as e:
+                snippet = (res.stdout if "res" in dir() else "")[:100]
+                logger.error(f"FlyAI JSON 解析失败: {e} | 输出前100字符: {snippet}")
+                break
+            except FileNotFoundError:
+                logger.error("FlyAI CLI 未安装: 请执行 npm i -g @fly-ai/flyai-cli")
+                self._cli_available = False
+                break
+            except Exception as e:
+                logger.error(f"FlyAI CLI 异常: {e}")
+                break
 
         return None
 
@@ -419,10 +444,12 @@ class FlyAIApiClient:
         """
         queries = [
             f"{city}{poi_name}门票预订",
-            f"{city}{poi_name}门票",
-            f"{poi_name}门票 飞猪",
+            f"{poi_name}门票",
         ]
         for query in queries:
+            if getattr(self, "risk_blocked", False):
+                break
+            time.sleep(3.5)  # 主动限速防429/403
             try:
                 raw = self._run_cli(["ai-search", f"--query={query}"])
                 if raw and isinstance(raw, dict):
@@ -478,14 +505,15 @@ class FlyAIApiClient:
             except (OSError, json.JSONDecodeError):
                 pass
 
-        # 2nd: ai-search 自然语言搜索（多格式尝试）
+        # 2nd: ai-search 自然语言搜索（多格式尝试，通过 time.sleep 降频防429）
         query_templates = [
             f"{city}{poi_name}门票价格",
-            f"{city}{poi_name}门票",
-            f"{poi_name}门票价格",
-            f"{poi_name}票价",
+            f"{poi_name}门票",
         ]
         for query in query_templates:
+            if getattr(self, "risk_blocked", False):
+                break
+            time.sleep(3.5)  # 主动限速降频防403
             try:
                 raw = self._run_cli(["ai-search", f"--query={query}"])
                 if raw and isinstance(raw, dict):

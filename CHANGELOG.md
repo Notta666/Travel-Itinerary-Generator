@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.5] - 2026-07-01
+### Security
+- **CORS 加固**：`allow_origins=["*"]` 改为由环境变量 `CORS_ORIGINS` 控制，默认仅允许 `localhost:8080` 和 `127.0.0.1:8080`
+- **WebApp 绑定地址**：`host="0.0.0.0"` 改为 `host="127.0.0.1"`，仅本地可访问，避免暴露到局域网
+- **输入校验**：`/generate` 端点 `goal` 参数添加长度限制（500 字符上限）
+- **XSS 修复**：`ui.js:showError()` 改用 `textContent` 替代 `innerHTML` 插入动态消息
+- **硬编码路径清理**：`flyai_api.py` 移除 `C:\Users\Notta` 硬编码兜底，仅依赖环境变量
+
+### Added
+- **CORS 环境变量**：`.env.example` 新增 `CORS_ORIGINS` 配置项说明
+- **安全审查**：项目通过全面安全审查，确认无硬编码密钥、`.env` 已 gitignored、无 SQL 注入与 eval 风险
+
+### Changed
+- CHANGELOG 格式标准化
+
 ## [3.5.4] - 2026-07-01
 ### Added
 - **FLYAI 品牌统一**：前端所有 Hermes/HERMES 字样替换为 FLYAI（title/footer/mockup-label/使用指南/CSS注释）

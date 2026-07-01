@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT)
 
-from pipeline.run_pipeline import _parse_goal
+from utils.parsers import _parse_goal
 
 
 class TestParseGoal(unittest.TestCase):

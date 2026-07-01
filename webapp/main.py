@@ -6,7 +6,7 @@ sys.path.insert(0, PROJECT)
 
 import json, uuid, asyncio, threading
 
-from webapp.config import STATIC_DIR, TEMPLATES_DIR, OUTPUTS_DIR, DB_PATH
+from webapp.config import STATIC_DIR, TEMPLATES_DIR, OUTPUTS_DIR, DB_PATH, CORS_ORIGINS
 from webapp.db import _init_db, store_task, update_task, get_task
 from webapp.task_manager import _run_pipeline_task, cancel_task
 
@@ -21,8 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="AI旅行攻略", version="3.5.4")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="AI旅行攻略", version="3.5.5")
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 # Static files and templates setup
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -49,6 +49,8 @@ async def generate(data: dict):
     hotel_budget_max = data.get("hotel_budget_max", 500)
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
+    if len(goal) > 500:
+        raise HTTPException(400, "目的地描述过长，请控制在500字以内")
     task_id = uuid.uuid4().hex[:12]
     _store_task(task_id, goal)
     # Run in background thread (non-blocking)
@@ -161,4 +163,4 @@ if __name__ == "__main__":
     print("   访问地址: http://localhost:8080")
     print("   按 Ctrl+C 停止")
     print(f"   SQLite 数据库: {DB_PATH}")
-    uvicorn.run(app, host="0.0.0.0", port=8080, timeout_keep_alive=600)
+    uvicorn.run(app, host="127.0.0.1", port=8080, timeout_keep_alive=600)

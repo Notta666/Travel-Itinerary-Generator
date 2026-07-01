@@ -50,7 +50,8 @@ export function showResult(taskId) {
 export function showError(msg) {
   const loadingEl = document.getElementById('loading');
   if (loadingEl) {
-    loadingEl.innerHTML = `<p>❌ 失败</p><p style="font-size:13px;color:#666;margin-top:8px;">${msg}</p>`;
+    loadingEl.innerHTML = '<p>❌ 失败</p><p style="font-size:13px;color:#666;margin-top:8px;"></p>';
+    loadingEl.querySelector('p:last-child').textContent = msg;
   }
 }
 

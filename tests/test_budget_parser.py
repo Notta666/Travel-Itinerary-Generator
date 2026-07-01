@@ -6,7 +6,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
-from pipeline.run_pipeline import _parse_budget
+from utils.parsers import _parse_budget
 
 
 class TestParseBudget(unittest.TestCase):

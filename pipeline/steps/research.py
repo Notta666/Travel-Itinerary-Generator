@@ -16,39 +16,62 @@ def step_2_research(context, xhs=None, progress_callback=None):
     print(f"\n{'='*50}")
     print(f"Step 2/9: 小红书调研 🔍（景点+美食双通道）")
     print(f"{'='*50}")
-    city = context["city"]
+    cities_to_search = context.get("multi_cities", [])
+    if not cities_to_search:
+        cities_to_search = [context["city"]]
     all_notes = []
     note_contents = []
 
-    # 双通道搜索
-    queries = [
-        (f"{city}美食推荐 必吃", "美食"),
-        (f"{city}旅游攻略 景点", "景点"),
-    ]
+    # 双通道搜索 (支持多城市循环)
+    food_notes = []
+    sight_notes = []
+    queries = []
+    for c in cities_to_search:
+        queries.extend([
+            (f"{c}美食推荐 必吃", "美食"),
+            (f"{c}旅游攻略 景点", "景点"),
+        ])
     for query, label in queries:
         print(f"  📕 搜索{label}: {query}")
         try:
             notes = xhs.search(query, limit=5)
-            all_notes.extend(notes)
+            if label == "美食":
+                food_notes.extend(notes)
+            else:
+                sight_notes.extend(notes)
             print(f"     → {len(notes)} 篇")
         except Exception as e:
             print(f"     ⚠️ {e}")
-        time.sleep(0.5)
+        time.sleep(3.0)  # 主动增加延时防风控
 
-    # 去重
+    # 去重并交替混合，确保精读时美食与景点数量均衡
+    def _filter_unique(notes):
+        unique = []
+        for n in notes:
+            t = n.get("title", "")
+            if t and t not in seen:
+                seen.add(t)
+                unique.append(n)
+        return unique
+
     seen = set()
-    unique_notes = []
-    for n in all_notes:
-        t = n.get("title", "")
-        if t and t not in seen:
-            seen.add(t)
-            unique_notes.append(n)
-    all_notes = unique_notes[:10]
+    unique_food = _filter_unique(food_notes)
+    unique_sight = _filter_unique(sight_notes)
 
-    # 并行精读前 5 篇笔记并抓取其评论
+    all_notes = []
+    for f, s in zip(unique_food, unique_sight):
+        all_notes.append(f)
+        all_notes.append(s)
+    
+    min_len = min(len(unique_food), len(unique_sight))
+    all_notes.extend(unique_food[min_len:])
+    all_notes.extend(unique_sight[min_len:])
+    all_notes = all_notes[:12]
+
+    # 串行精读前 6 篇笔记并抓取其评论
     if all_notes:
-        print(f"  📖 并行精读 {min(5, len(all_notes))} 篇笔记与精彩评论...")
-        active_notes = all_notes[:5]
+        print(f"  📖 顺序精读 {min(6, len(all_notes))} 篇笔记与精彩评论（防风控降频）...")
+        active_notes = all_notes[:6]
 
         def _fetch_note_and_comments(note):
             url = note.get("url", "")
@@ -57,7 +80,8 @@ def step_2_research(context, xhs=None, progress_callback=None):
             content = xhs.read_note_content(url)
             if not content:
                 return None
-            # 并行抓取评论
+            # 抓取评论
+            time.sleep(1.0)
             comments = xhs.get_comments(url, limit=5)
             if comments:
                 c_lines = []
@@ -67,19 +91,38 @@ def step_2_research(context, xhs=None, progress_callback=None):
                         c_lines.append(f"    - {c.get('author','匿名')}: {txt} (👍{c.get('likes',0)})")
                 if c_lines:
                     content["content"] += "\n【精彩评论与用户避雷反馈】:\n" + "\n".join(c_lines)
+            
+            # 抓取图片并进行视觉分析 (如果有支持多模态的 Vision API Key)
+            from utils.config import VISION_API_KEY, VISION_API_BASE, VISION_MODEL
+            if VISION_API_KEY:
+                time.sleep(1.0)
+                images = xhs.download_note_images(url, max_images=3)
+                if images:
+                    from utils.llm import LLMClient
+                    client = LLMClient(provider="openai", api_key=VISION_API_KEY, base_url=VISION_API_BASE, model=VISION_MODEL)
+                    try:
+                        vis_result = client.call(
+                            system_prompt="你是一个图片内容分析助手，擅长提取图片中的旅游相关信息。",
+                            user_prompt="请分析这些图片，提取出其中的餐厅环境、菜品、价目表、景点风景、排队情况等关键信息。尽量简短且抓取重点。",
+                            images=images,
+                            max_tokens=500
+                        )
+                        content["content"] += "\n【笔记图片视觉分析】:\n" + vis_result
+                    except Exception as e:
+                        print(f"⚠️ 当前模型({VISION_MODEL})不支持多模态视觉分析或调用失败，自动跳过图片解析: {e}")
+
             return content
 
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            futures = [ex.submit(_fetch_note_and_comments, note) for note in active_notes]
-            for f in futures:
-                try:
-                    res = f.result()
-                    if res:
-                        note_contents.append(res)
-                        title = next((an.get("title", "") for an in active_notes if an.get("url") == res.get("url")), "")
-                        print(f"     ✅ {title[:30]}")
-                except Exception:
-                    pass
+        for note in active_notes:
+            time.sleep(2.5)  # 每篇笔记之间主动等待 2.5s
+            try:
+                res = _fetch_note_and_comments(note)
+                if res:
+                    note_contents.append(res)
+                    title = note.get("title", "")
+                    print(f"     ✅ {title[:30]}")
+            except Exception as e:
+                logger.warning(f"读取小红书笔记失败: {e}")
 
     # LLM提取结构化景点+美食（含避雷/赞点）
     from utils.llm import call_deepseek
@@ -89,7 +132,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
             f"【笔记{i+1}】\n{n.get('content','')[:2500]}"
             for i, n in enumerate(note_contents)
         )
-        extract_prompt = f"""你是一名旅行信息整理专家。从以下{city}的小红书笔记及用户真实评论中，提取所有提到的【景点】和【餐厅/美食】。
+        extract_prompt = f"""你是一名旅行信息整理专家。从以下{context["city"]}的小红书笔记及用户真实评论中，提取所有提到的【景点】和【餐厅/美食】。
 特别注意：评论中往往包含真实的排队时长、避雷吐槽或极力推荐，请务必从正文 and 评论中提炼每个景点的"真实避雷点"与"赞点"。
 
 要求：
