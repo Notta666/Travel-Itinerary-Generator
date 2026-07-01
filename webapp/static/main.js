@@ -1,7 +1,7 @@
-import { taskState } from './state.js?v=3.5.5';
-import { startQuoteRotation, stopQuoteRotation } from './quotes.js?v=3.5.5';
-import { connectSSE } from './sse.js?v=3.5.5';
-import { showLoading, showResult, showError, updateProgress, resetButton, cancelCurrentTask } from './ui.js?v=3.5.5';
+import { taskState } from './state.js?v=3.5.6';
+import { startQuoteRotation, stopQuoteRotation } from './quotes.js?v=3.5.6';
+import { connectSSE } from './sse.js?v=3.5.6';
+import { showLoading, showResult, showError, updateProgress, resetButton, cancelCurrentTask } from './ui.js?v=3.5.6';
 
 const TAG_POOL = [
   {emoji:'🏔️', label:'安吉漂流',     goal:'安吉周末漂流自驾'},

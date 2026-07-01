@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.6] - 2026-07-01
+### Removed
+- **完全移除 Playwright 残留**：`utils/playwright_xhs.py` 已删除，README 中所有 Playwright 引用替换为 OpenCLI（文档树、数据源表、注意事项、致谢）
+- **清理冗余编号**：README 注意事项编号重复(两个 #4)已修正
+
+### Changed
+- **项目架构文档**：README 目录树移除已删除的 `playwright_xhs.py` 文件项
+- **Hermes Skill 同步**：travel-itinerary-pipeline skill 描述、脚本(xhs_login.py)、参考文档(playwright-xhs-engine.md)全部清理
+
 ## [3.5.5] - 2026-07-01
 ### Security
 - **CORS 加固**：`allow_origins=["*"]` 改为由环境变量 `CORS_ORIGINS` 控制，默认仅允许 `localhost:8080` 和 `127.0.0.1:8080`
