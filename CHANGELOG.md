@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.4] - 2026-07-01
+### Added
+- **FLYAI 品牌统一**：前端所有 Hermes/HERMES 字样替换为 FLYAI（title/footer/mockup-label/使用指南/CSS注释）
+- **飞猪 FlyAI 致谢**：README 致谢首位添加 FlyAI 开放平台
+
+### Fixed
+- **P0 Loading 界面空白**：`index.html` 缺失 `#loadingTemplate` 元素，导致 `ui.js:showLoading()` 模板克隆失败，加载态完全不显示。修复：内容迁入 `<template id="loadingTemplate">`，`<div id="loading">` 作空容器按需 clone
+- **P0 DOM 永久损毁**：`showError`/`cancelCurrentTask` 直接覆写 `loadingEl.innerHTML` 销毁内部节点（`#quoteText`/`#stepProgress`），二次生成时 JS 抛出 `TypeError: Cannot set properties of null`。修复：模板方案每次全新 clone
+- **P0 假数据冒充真实价格（数据诚信）**：飞猪 API 无返回时 `brochure/__init__.py` 自动生成 `hash(name)%150` 门票价、`hash(name)%500` 酒店价，外观与真实数据无异。修复：无数据时标注"暂无报价"，不做假
+- **P0 硬编码开放时间**：所有景点统一显示 `"08:30 - 17:30"`。修复：从 `_tdi.get("open_hours")` 获取，无数据不显示
+- **P0 捏造票种折扣**：学生票 `pm_val*0.5`、亲子票 `pm_val*2.5` 无任何事实依据。修复：仅显示飞猪返回的真实票价
+- **P1 120s 假进度条**：CSS `@keyframes progress 120s linear` 完全忽略 SSE 推送的真实 `pct`，10s 完成跳到 100%、卡住时到 100% 挂起。修复：CSS 动画移除 → JS 绑定 SSE `msg.pct` 动态更新 `width`，0.5s 过渡
+- **P1 SSE 重连耗尽后 UI 永久卡死**：3 次重连失败仅 `console.error`，无 UI 回调，按钮锁死在取消态、loading 无限转。修复：重连耗尽后触发 `onDone({ message: '连接中断' })` 恢复 UI
+- **P1 版本号 4 处不一致**：FastAPI `2.4.0` / footer `v3.0.0` / CSS/JS cache `v=3.0.1` / import `v=3.0.1`。修复：全部同步至 **v3.5.4**（main.py + index.html×3 + main.js×4）
+- **P2 轮播文案直接闪烁**：`quotes.js` 操作 `.fade-out/.fade-in` CSS 类但 `style.css` 无对应定义。修复：补齐 `opacity/transform` 过渡样式
+- **P2 背景动画 GPU 过载**：`gradientBg` 20s 周期修改 `background-position` 导致每帧重绘，低配机帧率暴跌。修复：周期延长至 80s
+- **P2 按钮文本不一致**：`resetButton()` 硬编码 `🚀 规划行程`，HTML 原始为 `✨ 极速规划`。修复：统一为后者
+
+### Security
+- `.gitignore` 补漏 3 处敏感文件：`data/xhs_storage.json`（小红书会话）/ `data/custom_images/` / `xiaohongshu-downloads/`
+- 安全审查通过：无硬编码 API Key、`.env` 已 gitignored、产物和缓存均已排除
+
+### Changed
+- README 致谢重构：移除 3 个纯理念启发项目（trip-map-builder/map-creator/AI-Trip-Planner）及参考理念段落，保留 7 个实际依赖
+
 ## [2.4.0] - 2026-07-01
 ### Added
 - **多城市串联规划**：省份+≥5天行程自动生成多城市路线（如浙江10日→杭州+绍兴+宁波+乌镇+千岛湖），按天平均分配，各城市独立跑 pipeline 后合并行程
