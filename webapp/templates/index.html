@@ -2,17 +2,17 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
-<title>AI 智能随心游 · 一键规划行程</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>FLYAI · AI Travel Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2.4.0">
+<link rel="stylesheet" href="/static/style.css?v=3.5.4">
 </head>
 <body>
 
 <div class="wrapper">
-  <div class="header">
+  <!-- Header -->
+  <div class="header animate-enter">
     <div class="badges">
       <span class="badge">🤖 AI 智能规划</span>
       <span class="badge highlight">📸 小红书避雷</span>
@@ -21,34 +21,35 @@
     </div>
     <div class="title-tag">FlyAI · Smart Trip Planner</div>
     <div class="title-main">随心游 <span>AI 旅行攻略</span></div>
-    <div class="title-sub">一句话说出你的旅行想法，剩下的交给 AI</div>
+    <div class="title-sub">一句话说出你的旅行想法，剩下的交给极光引擎</div>
   </div>
 
-  <div class="input-glass">
+  <!-- Input Glass -->
+  <div class="input-glass animate-enter delay-1">
     <div class="mockup-header">
       <div class="mockup-dots">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
       </div>
-      <span class="mockup-label">AI PLANNER PROMPT</span>
+      <span class="mockup-label">FLYAI PROMPT</span>
     </div>
     <div class="input-row">
       <input id="goalInput" type="text" placeholder="输入目的地，例如「安吉周末自驾漂流」" onkeydown="if(event.key==='Enter')generate()">
-      <button id="genBtn" onclick="generate()">规划行程 ✨</button>
+      <button id="genBtn" onclick="generate()">✨ 极速规划</button>
     </div>
 
-    <!-- 参数区：人数 / 总预算 / 酒店每晚预算 -->
+    <!-- Params Area -->
     <div class="params-area">
       <div class="params-row">
         <div class="param-item">
-          <label for="peopleInput"><span class="param-icon">👥</span> 人数</label>
+          <label for="peopleInput">👥 人数</label>
           <input id="peopleInput" type="number" min="1" placeholder="默认 2 人">
         </div>
         <div class="param-item">
-          <label for="budgetInput"><span class="param-icon">💰</span> 总预算</label>
-          <input id="budgetInput" type="number" min="0" placeholder="如 5000（留空自动估算）">
+          <label for="budgetInput">💰 总预算</label>
+          <input id="budgetInput" type="number" min="0" placeholder="如 5000（留空自动）">
         </div>
-        <div class="param-item hotel-budget-item">
-          <label><span class="param-icon">🏨</span> 住宿 <span class="label-sub">/晚</span></label>
+        <div class="param-item">
+          <label>🏨 住宿 /晚</label>
           <div class="hotel-range">
             <input id="hotelBudgetMin" type="number" min="0" value="300" placeholder="最低">
             <span class="range-bar"></span>
@@ -58,91 +59,100 @@
       </div>
     </div>
 
-    <!-- Pipeline 步骤定制 -->
+    <!-- Pipeline Customization -->
     <div class="pipeline-customization">
       <div class="custom-title" onclick="toggleCustomization()">
-        <span>⚙️ Pipeline 步骤配置 (非核心步骤可选)</span>
+        <span>⚙️ Pipeline 高级配置 (点击展开)</span>
         <span id="toggleIcon">➕</span>
       </div>
       <div class="custom-options" id="customOptions" style="display: none;">
         <label class="option-item">
           <input type="checkbox" id="step_research" checked>
           <div class="option-details">
-            <span class="option-name">小红书调研 📕 (Step 2)</span>
-            <span class="option-desc">抓取网红打卡景点与推荐美食（需 Chrome + OpenCLI 扩展，否则自动跳过）</span>
+            <span class="option-name">小红书调研 📕</span>
+            <span class="option-desc">抓取网红打卡景点与推荐美食（需扩展支持）</span>
           </div>
         </label>
         <label class="option-item">
           <input type="checkbox" id="step_enrich" checked>
           <div class="option-details">
-            <span class="option-name">POI 地址丰富 🏛️ (Step 4)</span>
-            <span class="option-desc">反查高德详细地址及片区信息，验证美食精确坐标</span>
+            <span class="option-name">POI 地址丰富 🏛️</span>
+            <span class="option-desc">反查高德详细地址及片区信息，验证坐标</span>
           </div>
         </label>
         <label class="option-item">
           <input type="checkbox" id="step_distance" checked>
           <div class="option-details">
-            <span class="option-name">驾车距离矩阵 📏 (Step 5)</span>
-            <span class="option-desc">计算两点间驾车距离与时间，以优化每日行驶排序</span>
+            <span class="option-name">驾车距离矩阵 📏</span>
+            <span class="option-desc">计算两点间驾车距离与时间优化排序</span>
           </div>
         </label>
         <label class="option-item">
           <input type="checkbox" id="step_flyai" checked>
           <div class="option-details">
-            <span class="option-name">飞猪实时物价 ✈️ (Step 5.5)</span>
-            <span class="option-desc">查询机票/高铁/酒店实时价格，精确规划预算（需已配置 FlyAI Key）</span>
+            <span class="option-name">飞猪实时物价 ✈️</span>
+            <span class="option-desc">查询机票/高铁/酒店实时价格与房态</span>
           </div>
         </label>
         <label class="option-item">
           <input type="checkbox" id="step_tips" checked>
           <div class="option-details">
-            <span class="option-name">出行建议与天气 🌤️ (Step 8.5)</span>
-            <span class="option-desc">获取打包清单、穿衣视觉指南以及未来 3-7 天天气预测</span>
+            <span class="option-name">出行建议与天气 🌤️</span>
+            <span class="option-desc">获取打包清单、视觉穿衣指南及天气预测</span>
           </div>
         </label>
       </div>
     </div>
   </div>
 
-  <div class="examples" id="exampleTags">
+  <!-- Examples -->
+  <div class="examples animate-enter delay-2" id="exampleTags">
     <span onclick="fill(this.dataset.goal)" data-goal="安吉周末漂流自驾">🏔️ 安吉漂流</span>
     <span onclick="fill(this.dataset.goal)" data-goal="杭州两天一夜带爸妈">👨‍👩‍👧 杭州亲子</span>
     <span onclick="fill(this.dataset.goal)" data-goal="莫干山避暑自驾">🌲 莫干山避暑</span>
     <span onclick="fill(this.dataset.goal)" data-goal="千岛湖三天度假">🏖️ 千岛湖度假</span>
   </div>
 
-  <div class="grid">
-    <div class="card"><div class="card-icon">📖</div><div class="card-title">精美图文手册</div><div class="card-desc">自动配图生成卡片行程，打卡避雷一应俱全</div></div>
-    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰切换</div></div>
-    <div class="card"><div class="card-icon">🍳</div><div class="card-title">真实美食推荐</div><div class="card-desc">融合小红书双通道调研，扫街美食精挑细选</div></div>
-    <div class="card"><div class="card-icon">✈️</div><div class="card-title">飞猪实时物价</div><div class="card-desc">机票/高铁/酒店实时价格查询，预算精准可控</div></div>
+  <!-- Features Grid -->
+  <div class="grid animate-enter delay-3">
+    <div class="card"><div class="card-icon">📖</div><div class="card-title">精美手账攻略</div><div class="card-desc">自动配图生成高颜值卡片行程，打卡避雷一应俱全。</div></div>
+    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰轨迹切换。</div></div>
+    <div class="card"><div class="card-icon">🍳</div><div class="card-title">双通道美食库</div><div class="card-desc">融合小红书与大模型调研，为您精挑细选地道美食。</div></div>
+    <div class="card"><div class="card-icon">✈️</div><div class="card-title">飞猪实时接入</div><div class="card-desc">机酒实时比价预订无缝衔接，让行程预算精准可控。</div></div>
   </div>
 
-  <div id="loading">
-    <div class="loader"></div>
-    <p class="loading-title">🤖 正在规划你的专属攻略...</p>
-    <p class="hint" id="loadingHint">读取小红书网友路线中...</p>
+  <!-- Loading Template (cloned by ui.js on each generation) -->
+  <template id="loadingTemplate">
+    <div class="loader-container">
+      <div class="loader-ring"></div>
+      <div class="loader-core"></div>
+    </div>
+    <p class="loading-title">🚀 极光引擎运转中...</p>
+    <p class="hint" id="loadingHint">正在为您规划专属旅行攻略</p>
     <div class="quote-container">
       <span class="quote-text" id="quoteText">📕 正在翻阅小红书的宝藏笔记...</span>
     </div>
-    <div id="stepProgress" style="margin:12px auto 0;max-width:340px;text-align:center;font-size:12px;color:#6366f1;font-weight:600;min-height:20px;"></div>
+    <div id="stepProgress" style="margin:16px auto 0;max-width:340px;text-align:center;font-size:13px;color:var(--brand-secondary);font-weight:700;min-height:20px;"></div>
     <div class="progress-bar"><div class="progress-bar-inner"></div></div>
-  </div>
+  </template>
+  <!-- Loading container (populated from template) -->
+  <div id="loading"></div>
 
+  <!-- Result Frame -->
   <div id="result">
     <div class="result-header">
-      <h2>📖 攻略已就绪</h2>
-      <a id="downloadLink" href="#">下载离线手册 ⬇</a>
+      <h2>🎉 您的专属攻略已就绪</h2>
+      <a id="downloadLink" href="#">⬇ 下载离线版</a>
     </div>
     <div id="brochureFrame">
       <iframe id="brochureIframe"></iframe>
     </div>
   </div>
 
-  <!-- 使用说明 -->
-  <div class="user-guide-card">
+  <!-- Guide Card -->
+  <div class="user-guide-card animate-enter delay-4">
     <div class="guide-header" onclick="toggleGuide()">
-      <span>📖 AI 随心游使用说明</span>
+      <span>💡 FLYAI 引擎使用指南</span>
       <span id="guideToggleIcon">➕</span>
     </div>
     <div class="guide-content" id="guideContent" style="display: none;">
@@ -150,32 +160,34 @@
         <div class="step-num">1</div>
         <div class="step-body">
           <div class="step-title">输入您的旅行灵感</div>
-          <div class="step-desc">在上方输入目的地及特殊要求，如"安吉周末漂流自驾"、"带爸妈杭州两天一日，要轻松"等。系统会自动分析天数、预算和偏好。</div>
+          <div class="step-desc">输入目的地及特殊要求，如"安吉周末漂流"、"带爸妈杭州两天"，极光引擎会自动解析时间与偏好。</div>
         </div>
       </div>
       <div class="guide-step">
         <div class="step-num">2</div>
         <div class="step-body">
-          <div class="step-title">定制您的专属流程</div>
-          <div class="step-desc">通过勾选"Pipeline 步骤配置"，您可以定制运行流程。"小红书调研"需要 Chrome 浏览器 + OpenCLI 扩展支持，否则该步骤会自动跳过，不影响其他功能。取消勾选耗时步骤可获得更快的生成速度。</div>
+          <div class="step-title">无感并行计算</div>
+          <div class="step-desc">引擎将同时调用 LLM、小红书爬虫、高德地图矩阵、飞猪 OpenAPI，数秒内完成百亿级的数据验证组合。</div>
         </div>
       </div>
       <div class="guide-step">
         <div class="step-num">3</div>
         <div class="step-body">
-          <div class="step-title">获取高颜值手账攻略</div>
-          <div class="step-desc">生成完毕后，系统将展示融合 Leaflet 交互地图的图文旅行手册，您可以在线任意切换景点、美食、酒店，还可以点击下载 HTML 离线查看。</div>
+          <div class="step-title">查阅并分享</div>
+          <div class="step-desc">生成完毕后，您将看到具备实时交互地图的精美图文手账，不仅支持在线动态浏览，还可以一键下载随时阅读。</div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="footer">
-    <span class="brand">Hermes Travel Engine</span>
-    <span>v2.4.0</span>
+  <!-- Footer -->
+  <div class="footer animate-enter delay-4">
+    <span class="brand">FLYAI Travel Engine</span>
+    <span>Powered by AI</span>
+    <span>v3.5.4</span>
   </div>
 </div>
 
-<script src="/static/app.js?v=2.4.0"></script>
+<script type="module" src="/static/main.js?v=3.5.4"></script>
 </body>
 </html>

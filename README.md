@@ -221,32 +221,18 @@ AMAP_KEY=your-gaode-api-key-here
 
 ---
 
-## 🙏 致谢与引用
+## 🙏 致谢
 
-### 致敬项目
+### 核心依赖
 
-- [**hiyeshu/trip-map-builder**](https://github.com/hiyeshu/trip-map-builder) — 三阶段旅行规划工作流（规划→调研→地图），本项目的小红书调研和单文件HTML模板理念深受其启发
-- [**Hatari130/map-creator**](https://github.com/Hatari130/map-creator) — 结合 GIS+GPT 的城市打卡地图生成器，启发了本项目的海报风格手册和图片获取方案
-- [**Drfccv/AI-Trip-Planner**](https://github.com/Drfccv/AI-Trip-Planner) — 基于 LLM+高德 API 的旅行规划器，验证了技术路线的可行性
+- [**飞猪 FlyAI 开放平台**](https://flyai.open.fliggy.com/) — 机票/高铁/酒店/门票实时价格查询，是本项目「一键预订总览」模块的核心数据引擎，提供结构化 segments（车次号/航班号/航站楼）及跳转预订能力
+- [**高德开放平台 Web 服务 API**](https://lbs.amap.com/) — POI 搜索、地理编码、路径规划、静态地图、天气查询
+- [**DeepSeek API**](https://platform.deepseek.com/) — 对抗性辩论路线规划、Goal 解析、出行建议生成
+- [**Leaflet.js**](https://leafletjs.com/) — 开源交互式地图库（CDN 引入）
+- [**OpenStreetMap**](https://www.openstreetmap.org/) — 免费地图数据
+- [**FastAPI**](https://fastapi.tiangolo.com/) — Web 应用框架
+- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，Playwright 不可用时的降级小红书数据采集引擎
 - [**Panniantong/agent-reach**](https://github.com/Panniantong/agent-reach) — AI Agent 互联网渠道工具，提供小红书/B站/Reddit 等调研能力
-- [**jackwener/OpenCLI**](https://github.com/jackwener/OpenCLI) — 浏览器桥接工具，现已降级为 Playwright 的备用方案
-- [**NanmiCoder/MediaCrawler**](https://github.com/NanmiCoder/MediaCrawler) — 多平台自媒体数据采集工具（54K★），为 Playwright 引擎的架构参考
-- [**Microsoft/playwright-python**](https://github.com/microsoft/playwright-python) — 浏览器自动化框架，本项目的首选小红书数据采集后端
-
-### 技术依赖
-
-- [高德开放平台 Web 服务 API](https://lbs.amap.com/) — POI 搜索、地理编码、路径规划、静态地图、天气查询
-- [DeepSeek API](https://platform.deepseek.com/) — 对抗性辩论路线规划、出行建议生成
-- [Leaflet.js](https://leafletjs.com/) — 开源交互式地图库
-- [OpenStreetMap](https://www.openstreetmap.org/) — 免费地图数据
-- [FastAPI](https://fastapi.tiangolo.com/) — Web 应用框架
-
-### 参考理念
-
-- **对抗性辩论模式** — 受投资领域"多空辩论"方法论启发，用于旅行路线规划的多视角融合
-- **工程控制论** — 受 Wiener 控制论启发，项目中 Pipeline 的前馈加载、积分控制、自监控闭环等设计模式
-- **Glassmorphism 设计语言** — 受 Apple Design System 和 Glassmorphism 设计趋势影响
-- **单文件 HTML 分发** — 受 trip-map-builder 和 singlefile 项目影响，零依赖部署
 
 ---
 

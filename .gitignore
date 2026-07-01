@@ -31,6 +31,9 @@ data/cache/*
 data/image_cache/*
 data/user_prefs.json
 data/tasks.db
+data/xhs_storage.json
+data/custom_images/
+xiaohongshu-downloads/
 data/references/amap_poicode.zip
 data/references/amap_poicode/
 
