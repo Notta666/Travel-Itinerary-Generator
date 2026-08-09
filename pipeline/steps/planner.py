@@ -2,10 +2,17 @@
 Step 6: 对抗性辩论路线规划 (方案A / 方案B / 综合)
 ====================================================
 """
-import json, copy, time, logging
+import json, copy, time, logging, re
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("travel_pipeline")
+
+
+def _normalize_name(name):
+    if not name:
+        return ""
+    cleaned = re.sub(r'[（(].*?[）)]', '', name)
+    return re.sub(r'[^\w\u4e00-\u9fa5]', '', cleaned).lower()
 
 
 def _safe_parse_fusion(raw):
@@ -202,6 +209,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 5. ⚠️【全网黑过滤】如果某个菜品/餐厅的 complaints 包含"全网黑""游客陷阱"等关键词，禁止推荐。
 6. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，确保行程总花费不超预算。
 7. 【就近优先】餐厅的 `nearby_pois` 字段标注了该餐厅附近的景点，优先选当天景点附近的餐厅，避免跨区跑远路。
+8. ⚠️【严禁重复原则】：整个行程（包括同一天内及跨天）中，每个景点和每家餐厅/美食名称必须独一无二，绝对不得重复出现（例如：不能在 Day 1 和 Day 3 重复安排同一个景点或同一家餐厅）。
 {format_instruction}"""
 
     # ---- Bear Prompt ----
@@ -222,6 +230,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 4. ⚠️ 【全网黑过滤】特别注意：如果某个餐厅/菜品的 complaints 中包含"全网黑""游客陷阱""名过其实""避雷"等关键词，或评论区大量出现一致差评，必须将其**彻底从最终行程中移除**，不可仅标注警示。
 5. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，推荐高品质但不超预算的方案。
 6. 【就近优先】餐厅的 `nearby_pois` 字段标注了该餐厅附近的景点，同一天内的餐厅优先选当天景点附近的，避免跨区跑远路。
+7. ⚠️【严禁重复原则】：整个行程（跨天及同天）中，每个景点与餐厅必须全局唯一，绝不安排重复的景点或餐厅。
 {format_instruction}"""
 
     try:
@@ -283,6 +292,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
 5. 必须严格落实【一日三餐+小吃甜点】规则：最终方案里，每一天原则上都要推荐早餐、午餐、晚餐三顿正餐（标注在时段或note中），其它闲暇时段（下午或夜间）可穿插推荐特色小吃/甜品/夜宵，不能遗漏正餐。
 6. ⚠️ 【全网黑一票否决】如果某餐厅/菜品的 complaints 含"全网黑""游客陷阱"——直接移除，不可保留。Fusion 裁决时优先采纳有明确避雷依据的 Bear 方案。
 7. 【就近优先】餐厅的 `nearby_pois` 字段标注了它附近的景点。同一天内优先选当天景点附近的餐厅，避免跨区远距离移动。
+8. ⚠️【严禁重复原则】：裁决后的最终行程中，整个行程（跨天及同天）每个景点和每家餐厅绝对不得重复出现，确保景点与餐厅名称全局唯一。
 
 输出JSON:
 {{"days":[{{"day":1,"label":"主题","summary":"概要","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)",
@@ -373,6 +383,8 @@ Bear悠闲避雷方案摘要: {bear_summary}
         city_centers = [[121.47, 31.23]]
 
     itinerary = []
+    seen_sights = set()
+    seen_foods = set()
     for d in days_out:
         day_pois, day_foods = [], []
 
@@ -391,6 +403,18 @@ Bear悠闲避雷方案摘要: {bear_summary}
             s_type = s.get("type", "sight")
             name = s["name"]
             slot_city = s.get("city", "").strip()
+
+            norm_name = _normalize_name(name)
+            if s_type == "food":
+                if norm_name in seen_foods:
+                    print(f"  ⚠️ 去重跳过重复美食: {name}")
+                    continue
+                seen_foods.add(norm_name)
+            else:
+                if norm_name in seen_sights:
+                    print(f"  ⚠️ 去重跳过重复景点: {name}")
+                    continue
+                seen_sights.add(norm_name)
 
             matched = None
             if s_type == "food":

@@ -142,9 +142,48 @@ def _color_for(name, is_food):
     pool = _FOOD_GRADIENTS if is_food else _POI_GRADIENTS
     return pool[hash(name) % len(pool)]
 
+
+def _normalize_name(name):
+    if not name:
+        return ""
+    cleaned = re.sub(r'[（(].*?[）)]', '', name)
+    return re.sub(r'[^\w\u4e00-\u9fa5]', '', cleaned).lower()
+
+
+def _deduplicate_itinerary(itinerary):
+    if not itinerary:
+        return itinerary
+    seen_sights = set()
+    seen_foods = set()
+    deduped_itinerary = []
+    for day in itinerary:
+        new_day = dict(day)
+        new_pois = []
+        for p in day.get("pois", []):
+            norm = _normalize_name(p.get("name", ""))
+            if norm not in seen_sights:
+                seen_sights.add(norm)
+                new_pois.append(p)
+            else:
+                logger.warning(f"⚠️ 手册渲染去重跳过重复景点: {p.get('name')}")
+        new_foods = []
+        for f in day.get("foods", []):
+            norm = _normalize_name(f.get("name", ""))
+            if norm not in seen_foods:
+                seen_foods.add(norm)
+                new_foods.append(f)
+            else:
+                logger.warning(f"⚠️ 手册渲染去重跳过重复美食: {f.get('name')}")
+        new_day["pois"] = new_pois
+        new_day["foods"] = new_foods
+        deduped_itinerary.append(new_day)
+    return deduped_itinerary
+
+
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                        transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source=""):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
+    itinerary = _deduplicate_itinerary(itinerary)
     date_range_str = ""
     if weather and weather.get("forecast"):
         forecasts = weather["forecast"]
