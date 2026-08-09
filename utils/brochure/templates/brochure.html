@@ -1,330 +1,404 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" class="light">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>{{ city }}旅行手册 | {{ trip_label }}</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{{ city }} 旅游手册 | {{ trip_label }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@700;900&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-:root{--bg:#0a0d14;--text:#e8edf5;--text2:rgba(232,237,245,0.6);--text3:rgba(232,237,245,0.35);--card:rgba(255,255,255,0.03);--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.1);--tbg:rgba(255,255,255,0.05);--c1:#0f1729;--c2:#1a1f35;--mday1:hsl(210,70%,50%);--mday2:hsl(240,70%,50%);font-family:'Inter',sans-serif;color-scheme:dark;}
-[data-theme="light"]{--bg:#f5f6fa;--text:#1a1d26;--text2:rgba(26,29,38,0.55);--text3:rgba(26,29,38,0.3);--card:rgba(255,255,255,0.85);--border:rgba(0,0,0,0.06);--border2:rgba(0,0,0,0.1);--tbg:rgba(0,0,0,0.04);--c1:#e8edf5;--c2:#d5dce8;}
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);max-width:960px;margin:0 auto;padding:0;transition:all .3s;}
-.tb{position:fixed;top:20px;right:20px;z-index:999;width:40px;height:40px;border-radius:50%;border:1px solid var(--border2);background:var(--card);color:var(--text);font-size:18px;cursor:pointer;backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;}
-.tb:hover{transform:scale(1.1);}
-.cover{height:100vh;min-height:600px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:40px 20px;position:relative;overflow:hidden;background:linear-gradient(135deg,var(--c1),var(--c2));}
-.cover::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(ellipse at 30% 40%,rgba(100,180,255,0.08)0%,transparent 50%),radial-gradient(ellipse at 70% 60%,rgba(167,139,250,0.06)0%,transparent 50%);animation:fl 20s ease-in-out infinite;}
-@keyframes fl{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,-20px)}}
-.cover h1{font-family:'Outfit',sans-serif;font-size:52px;font-weight:900;position:relative;z-index:1;background:linear-gradient(135deg,#64b4ff,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;}
-.cs{font-size:18px;color:var(--text3);position:relative;z-index:1;letter-spacing:2px;}
-.ci{position:absolute;bottom:60px;left:0;right:0;font-size:14px;color:var(--text3);z-index:1;}
-.ci span{margin:0 16px;}
-.ds{margin:30px 12px;border-radius:20px;overflow:hidden;background:var(--card);border:1px solid var(--border);}
-.dh{padding:30px 24px;color:#fff;position:relative;}
-.dn{font-family:'Outfit',sans-serif;font-size:48px;font-weight:900;opacity:.15;position:absolute;top:10px;right:20px;}
-.dt{font-size:24px;font-weight:700;}
-.dd{font-size:14px;opacity:.7;margin-top:4px;}
-.dsm{padding:16px 24px;font-size:14px;color:var(--text2);line-height:1.6;background:var(--tbg);border-bottom:1px solid var(--border);}
-.ccont{padding:16px;}
-.cr{display:flex;gap:16px;margin-bottom:16px;align-items:stretch;}
-.cr.r{flex-direction:row-reverse;}
-.cp{width:200px;min-height:160px;border-radius:16px;flex-shrink:0;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
-.po{font-size:15px;font-weight:700;color:rgba(255,255,255,0.35);text-shadow:0 2px 8px rgba(0,0,0,0.3);}
-.cb{position:absolute;top:8px;left:8px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,0.45);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:16px;border:1px solid rgba(255,255,255,0.15);}
-.cc{flex:1;padding:4px 0;}
-.cc h3{font-size:17px;font-weight:600;margin-bottom:8px;}
-.tw{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:6px;}
-.t{font-size:11px;padding:3px 10px;border-radius:8px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:3px;}
-.t.g{background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);}
-.t.m{background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.2);}
-.t.b{background:rgba(100,180,255,0.1);color:#64b4ff;border:1px solid rgba(100,180,255,0.2);}
-.t.o{background:rgba(255,107,53,0.1);color:#ff6b35;border:1px solid rgba(255,107,53,0.2);}
-.t.ti{background:rgba(148,163,184,0.1);color:#94a3b8;border:1px solid rgba(148,163,184,0.2);}
-.t.tr{background:rgba(255,107,53,0.08);color:#ff6b35;border:1px solid rgba(255,107,53,0.15);}
-.t.ticket{background:rgba(239,68,68,0.08);color:#ef4444;border:1px solid rgba(239,68,68,0.2);}
-.ad{font-size:12px;color:var(--text3);margin-bottom:4px;}
-.nt{font-size:12px;color:var(--text2);line-height:1.5;}
+/* ============ 设计令牌：浅/深无缝 · 毛玻璃旅行 App ============ */
+:root{
+  --bg-1:#eaf1f8; --bg-2:#dde9f3; --bg-3:#eaf6f1;
+  --text:#15233b; --muted:#5d6e86;
+  --surface:rgba(255,255,255,0.55);
+  --surface-2:rgba(255,255,255,0.74);
+  --surface-solid:#ffffff;
+  --border:rgba(21,35,59,0.10);
+  --border-strong:rgba(21,35,59,0.16);
+  --accent:#0E9F8E;          /* 青绿：主色（饱和度受控，非紫蓝） */
+  --accent-2:#E08A3C;        /* 暖琥珀：阳光/预算 */
+  --accent-soft:rgba(14,159,142,0.12);
+  --warn:#C2680E;            /* 未解析/待核实 */
+  --warn-soft:rgba(194,104,14,0.14);
+  --shadow:0 12px 40px rgba(15,30,55,0.10);
+  --shadow-sm:0 6px 18px rgba(15,30,55,0.08);
+  --radius:22px; --radius-sm:14px;
+  --maxw:1080px;
+  --font-sans:'Inter','Noto Sans SC',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  --font-disp:'Sora','Noto Serif SC',serif;
+}
+html.dark{
+  --bg-1:#0a1019; --bg-2:#0d1626; --bg-3:#0a1a1a;
+  --text:#e7eef8; --muted:#93a5be;
+  --surface:rgba(255,255,255,0.06);
+  --surface-2:rgba(255,255,255,0.10);
+  --surface-solid:#121b2b;
+  --border:rgba(255,255,255,0.12);
+  --border-strong:rgba(255,255,255,0.20);
+  --accent:#2DD4BF;
+  --accent-2:#FBBF24;
+  --accent-soft:rgba(45,212,191,0.14);
+  --warn:#F59E0B;
+  --warn-soft:rgba(245,158,11,0.16);
+  --shadow:0 14px 44px rgba(0,0,0,0.5);
+  --shadow-sm:0 6px 18px rgba(0,0,0,0.4);
+}
 
-/* 地图专区 */
-.map-section{margin:20px 12px;border-radius:20px;overflow:hidden;border:1px solid var(--border);}
-.map-section h2{padding:20px 24px 0;font-size:20px;}
-#map{height:400px;width:100%;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--font-sans);
+  color:var(--text);
+  background:var(--bg-1);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  transition:background-color .4s ease,color .4s ease;
+  min-height:100vh;
+}
+/* 背景柔光斑（毛玻璃氛围） */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(60vw 60vw at 12% 8%, var(--bg-3), transparent 60%),
+    radial-gradient(55vw 55vw at 88% 12%, rgba(224,138,60,0.10), transparent 60%),
+    radial-gradient(70vw 70vw at 50% 100%, var(--bg-2), transparent 65%),
+    linear-gradient(160deg,var(--bg-1),var(--bg-2));
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  backdrop-filter:none;
+}
 
-.sec{margin:20px 12px;padding:24px;border-radius:20px;}
-.fh{background:linear-gradient(135deg,rgba(255,107,53,0.08),rgba(255,107,53,0.02));border:1px solid rgba(255,107,53,0.15);}
-.fh h2{font-size:20px;margin-bottom:16px;}
-.fg{display:flex;flex-wrap:wrap;gap:8px;}
-.fc{padding:8px 16px;border-radius:12px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.2);font-size:13px;color:#ff6b35;}
+/* 毛玻璃工具类 */
+.glass{
+  background:var(--surface);
+  backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+.glass-2{
+  background:var(--surface-2);
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-sm);
+}
 
-/* 出行建议 */
-.ts{background:linear-gradient(135deg,rgba(245,158,11,0.04),rgba(251,191,36,0.02));border:1px solid rgba(245,158,11,0.1);}
-.ts h2{font-size:20px;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
-.tl{list-style:none;padding:0;}
-.tl li{padding:10px 14px;margin-bottom:6px;border-radius:12px;font-size:13px;line-height:1.6;color:var(--text);display:flex;align-items:flex-start;gap:8px;}
-.tl li:nth-child(1),.tl li:nth-child(2),.tl li:nth-child(3),.tl li:nth-child(4),.tl li:nth-child(5){background:rgba(255,255,255,0.04);border:1px solid var(--border);}
-.tl li.pt{background:linear-gradient(135deg,rgba(255,107,53,0.08),rgba(239,68,68,0.03));border:1px solid rgba(255,107,53,0.15);color:#ff6b35;}
-.tl li.dt{background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.03));border:1px solid rgba(99,102,241,0.12);color:var(--text);}
-.tl li.em{background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03));border:1px solid rgba(245,158,11,0.15);color:#d97706;}
-/* 天气 */
-.wx{background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(52,211,153,0.04));border:1px solid rgba(16,185,129,0.12);}
-.wx h2{font-size:20px;margin-bottom:12px;}
-.wf-row{display:flex;gap:8px;margin-bottom:12px;}
-.wf{flex:1;padding:10px;border-radius:12px;background:var(--tbg);border:1px solid var(--border);text-align:center;}
-.wd{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px;}
-.ww{font-size:20px;margin-bottom:4px;}
-.wt{font-size:11px;color:var(--text3);}
-.ws-row{display:flex;flex-wrap:wrap;gap:6px;}
-.ws{font-size:12px;padding:4px 10px;border-radius:8px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15);color:var(--text2);}
+/* ============ 顶部栏 ============ */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px clamp(16px,4vw,40px);
+  background:var(--surface);
+  backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:1.05rem;}
+.brand .dot{width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 0 4px var(--accent-soft);}
+.theme-btn{
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  padding:8px 14px;border-radius:999px;border:1px solid var(--border-strong);
+  background:var(--surface-2);color:var(--text);font-size:.8rem;font-weight:600;transition:.2s;
+}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent);}
+.theme-btn svg{width:16px;height:16px;}
 
-/* 酒店推荐 - 重设计 */
-.hs{margin:12px;padding:20px;border-radius:20px;background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(99,102,241,0.03));border:1px solid rgba(139,92,246,0.15);backdrop-filter:blur(8px);}
-.ht{font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
-.ht-hint{font-size:11px;font-weight:400;color:var(--text3);margin-left:auto;}
-.hw{display:flex;flex-direction:column;gap:10px;}
-.hc{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;background:var(--card);border:2px solid var(--border2);cursor:pointer;transition:all .3s ease;position:relative;}
-.hc:hover{border-color:rgba(139,92,246,0.4);background:rgba(139,92,246,0.06);transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,0.1);}
-.hc.selected{border-color:rgba(16,185,129,0.6);background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(52,211,153,0.04));box-shadow:0 0 0 1px rgba(16,185,129,0.2);}
-.hc-check{width:24px;height:24px;border-radius:50%;border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;color:#10b981;flex-shrink:0;transition:all .2s;}
-.hc.selected .hc-check{background:#10b981;border-color:#10b981;color:#fff;}
-.hc-info{flex:1;min-width:0;}
-.hc-row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
-.hc-row2{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
-.hn{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px;}
-.hsg{font-size:14px;color:#f59e0b;font-weight:600;flex-shrink:0;letter-spacing:2px;}
-.hpr{font-size:14px;color:#ea580c;font-weight:700;}
-.hpr.no-price{color:var(--text3);font-weight:400;font-style:italic;}
-/* 飞猪预订按钮 */
-.btn-book{display:inline-block;margin-top:8px;padding:5px 14px;border-radius:8px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:11px;font-weight:600;text-decoration:none;transition:all .25s ease;border:1px solid rgba(255,255,255,0.12);}
-.btn-book:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(249,115,22,0.35);background:linear-gradient(135deg,#ea580c,#c2410c);}
-.btn-book:active{transform:translateY(0);}
-.hdi{font-size:11px;color:var(--text3);padding:2px 8px;background:var(--tbg);border-radius:6px;}
-.htel{font-size:11px;color:var(--text2);}
-.hdy{font-size:11px;color:var(--text3);padding:2px 8px;background:rgba(16,185,129,0.08);border-radius:6px;border:1px solid rgba(16,185,129,0.15);}
-.hpic{width:56px;height:56px;border-radius:10px;object-fit:cover;flex-shrink:0;margin-left:8px;border:1px solid var(--border2);}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(16px,4vw,40px);}
 
-/* 飞猪预订按钮 */
-.btn-book{display:inline-block;margin-top:8px;padding:6px 16px;font-size:12px;font-weight:600;border-radius:8px;background:linear-gradient(135deg,#ff6a00,#ee0979);color:#fff;text-decoration:none;transition:all .3s ease;border:none;cursor:pointer;text-align:center;}
-.btn-book:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(238,9,121,0.4);}
+/* ============ 封面 ============ */
+.cover{position:relative;padding:clamp(36px,7vw,72px) 0 clamp(28px,5vw,52px);}
+.cover-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  padding:6px 14px;border-radius:999px;background:var(--accent-soft);margin-bottom:18px;
+}
+.cover h1{
+  font-family:var(--font-disp);font-weight:800;line-height:.98;letter-spacing:-.03em;
+  font-size:clamp(2.8rem,9vw,5.4rem);margin:0 0 14px;
+}
+.cover .trip-label{font-size:clamp(1.1rem,2.6vw,1.6rem);color:var(--muted);font-weight:600;margin-bottom:26px;}
+.cover-meta{display:flex;flex-wrap:wrap;gap:10px;}
+.meta-pill{
+  display:inline-flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;
+  padding:9px 15px;border-radius:14px;background:var(--surface-2);border:1px solid var(--border);
+}
+.meta-pill b{color:var(--text);font-weight:700;}
+.meta-pill .ic{opacity:.7;}
+.src-badge{
+  display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:700;
+  padding:9px 15px;border-radius:14px;color:var(--warn);background:var(--warn-soft);
+  border:1px solid var(--warn);
+}
 
-/* 预算概览 */
-.bs{background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(16,185,129,0.02));border:1px solid rgba(16,185,129,0.12);}
-.bs h2{font-size:18px;margin-bottom:14px;}
-.bg{display:flex;flex-direction:column;gap:8px;}
-/* 价格数据来源颜色区分 */
-.price-live{color:#22c55e;font-weight:600;}
-.price-cache{color:#eab308;font-weight:600;}
-.price-est{color:var(--text2);}
-.bi .bv .price-live::after{content:' 🟢';font-size:10px;}
-.bi .bv .price-cache::after{content:' 🟡';font-size:10px;}
-.bi .bv .price-est::after{content:' ⚪';font-size:10px;}
-/* 飞猪酒店标签 */
-.flyai-tag{display:inline-block;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;margin-right:4px;font-weight:600;vertical-align:middle;}
-.flyai-price{color:#f59e0b;}
-.hpr.flyai-price{color:#f59e0b;}
-.bi{display:flex;align-items:center;gap:8px;font-size:13px;}
-.bn{width:50px;flex-shrink:0;color:var(--text2);}
-.bv{width:70px;text-align:right;font-weight:600;color:var(--text);}
-.bp{width:30px;text-align:right;font-size:11px;color:var(--text3);}
-.bb{height:8px;border-radius:4px;background:linear-gradient(90deg,#10b981,#34d399);}
-.bt{margin-top:10px;font-size:12px;color:var(--text2);text-align:center;}
+/* ============ 通用区块 ============ */
+.section-title{
+  display:flex;align-items:center;gap:12px;margin:38px 0 18px;
+  font-family:var(--font-disp);font-weight:800;font-size:1.5rem;letter-spacing:-.01em;
+}
+.section-title .bar{width:6px;height:26px;border-radius:6px;background:linear-gradient(180deg,var(--accent),var(--accent-2));}
+.section-title .sub{font-family:var(--font-sans);font-size:.8rem;font-weight:600;color:var(--muted);margin-left:auto;}
 
-.tg{background:var(--card);border:1px solid var(--border);}
-.tg h2{font-size:20px;margin-bottom:12px;}
-.tg p{font-size:14px;color:var(--text2);line-height:1.8;}
-.ft{text-align:center;padding:40px 20px;font-size:12px;color:var(--text3);}
+/* ============ 逐日行程 ============ */
+.ds{margin:18px 0;padding:clamp(18px,3vw,30px);border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;}
+.dh{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 18px 16px;border-radius:var(--radius-sm);color:#fff;}
+.dh .dn,.dh .dt,.dh .dd{color:#fff;line-height:1;margin:0;}
+.dn{font-family:var(--font-disp);font-weight:800;font-size:1.05rem;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;line-height:1;}
+.dt{font-family:var(--font-disp);font-weight:800;font-size:clamp(1.6rem,4vw,2.2rem);line-height:1;}
+.dd{font-weight:600;color:var(--muted);line-height:1;}
+.dsm{padding:14px 0;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);}
+.ccont{padding-top:18px;display:flex;flex-direction:column;gap:18px;}
 
-/* 一键预订总览 */
-.booking-section{background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.04));border:1px solid rgba(99,102,241,0.15);}
-.booking-section h2{font-size:18px;margin-bottom:8px;}
-.booking-intro{font-size:12px;color:var(--text3);margin-bottom:14px;}
-.booking-list{display:flex;flex-direction:column;gap:8px;}
-.bi-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;background:var(--card);border:1px solid var(--border);transition:all .2s;}
-.bi-row:hover{border-color:rgba(99,102,241,0.3);}
-.bi-icon{font-size:20px;width:32px;text-align:center;flex-shrink:0;}
-.bi-info{flex:1;min-width:0;}
-.bi-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bi-meta{font-size:11px;color:var(--text3);margin-top:2px;}
-.bi-detail{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;}
-.bi-action{flex-shrink:0;}
-.btn-booking{display:inline-block;padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;transition:all .25s;border:none;cursor:pointer;}
-.btn-booking:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(99,102,241,0.35);}
-.booking-no-link{font-size:11px;color:var(--text3);white-space:nowrap;}
-.booking-footer{font-size:11px;color:var(--text3);text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.cr{display:flex;flex-direction:column;gap:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:14px;transition:.25s;}
+@media(min-width:760px){.cr{flex-direction:row;align-items:stretch;}.cr.r{flex-direction:row-reverse;}.cp{width:38%;aspect-ratio:4/5;}.cc{width:62%;padding-left:22px;}.cr.r .cc{padding-left:0;padding-right:22px;}}
+.cp{position:relative;overflow:hidden;border-radius:12px;background:var(--surface-solid);border:1px solid var(--border);min-height:200px;}
+.cp img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .6s;}
+.cp:hover img{transform:scale(1.06);}
+.cb{position:absolute;top:0;left:0;background:var(--accent);color:#fff;padding:4px 12px;font-weight:800;font-family:var(--font-disp);font-size:.8rem;border-bottom-right-radius:10px;}
+.po{position:absolute;bottom:0;left:0;width:100%;padding:12px 14px;background:linear-gradient(0deg,rgba(0,0,0,.72),transparent);color:#fff;font-weight:800;font-family:var(--font-disp);font-size:1rem;}
+.cc h3{font-family:var(--font-disp);font-size:1.4rem;font-weight:800;margin:0 0 12px;line-height:1.2;}
+.tw{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.t{border:1px solid var(--border-strong);padding:4px 10px;font-size:.72rem;font-weight:700;border-radius:999px;background:var(--surface);color:var(--text);letter-spacing:.02em;}
+.t.g{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);}
+.t.m{color:var(--muted);}
+.t.b{color:var(--accent-2);border-color:var(--accent-2);background:rgba(224,138,60,.12);}
+.t.o{color:#b4690e;border-color:#b4690e;background:rgba(180,105,14,.12);}
+.t.ti{color:var(--muted);}
+.t.tr{color:var(--warn);border-color:var(--warn);background:var(--warn-soft);} /* 待核实坐标 / 交通标记 */
+.ad{font-size:.85rem;color:var(--muted);font-weight:600;margin:0 0 8px;}
+.nt{font-size:.85rem;border-left:3px solid var(--accent);padding-left:12px;margin:10px 0 0;font-style:italic;font-weight:600;color:var(--text);}
 
-/* 地图 Tab */
-.map-tabs{display:flex;gap:6px;padding:8px 24px 0;}
-.mt{padding:5px 14px;border-radius:14px;border:1px solid var(--border2);background:var(--tbg);color:var(--text2);font-size:12px;cursor:pointer;transition:all .2s;}
-.mt.active{background:var(--mday1);color:#fff;border-color:var(--mday1);}
-.mt:hover{opacity:.8;}
+/* ============ 酒店 ============ */
+.hs{margin:18px 0;}
+.ht{font-family:var(--font-disp);font-weight:800;font-size:1.2rem;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.hw{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;}
+.hc{position:relative;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:16px;cursor:pointer;transition:.22s;overflow:hidden;}
+.hc:hover{transform:translateY(-4px);box-shadow:var(--shadow);border-color:var(--accent);}
+.hc.selected{border-color:var(--accent);background:var(--accent-soft);}
+.hc-check{position:absolute;top:14px;right:14px;width:22px;height:22px;border:2px solid var(--border-strong);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:transparent;font-weight:900;transition:.2s;}
+.hc.selected .hc-check{background:var(--accent);border-color:var(--accent);color:#fff;}
+.hn{font-family:var(--font-disp);font-size:1.15rem;font-weight:800;display:block;margin-bottom:8px;}
+.hpic{width:100%;height:150px;object-fit:cover;border-radius:10px;border:1px solid var(--border);margin-bottom:12px;display:block;}
+.hdy{background:var(--accent);color:#fff;font-size:.62rem;padding:2px 7px;border-radius:6px;font-weight:800;text-transform:uppercase;vertical-align:middle;margin-right:8px;}
+.hsg{color:var(--accent);font-weight:800;font-size:.85rem;}
+.hc-row2{margin-top:10px;display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:.85rem;}
+.hpr{font-size:1.2rem;font-weight:800;}
+.btn-book,.btn-booking{display:inline-block;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:7px 16px;border-radius:999px;font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;transition:.2s;text-decoration:none;}
+.btn-book:hover,.btn-booking:hover{background:transparent;color:var(--accent);}
 
-/* 图例 */
-.legend{display:flex;gap:20px;padding:8px 24px 16px;font-size:13px;color:var(--text2);}
-.legend-dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:4px;vertical-align:middle;}
+/* ============ 预订 / 交通表 ============ */
+.booking-list{display:flex;flex-direction:column;gap:12px;}
+.bi-row{display:flex;flex-direction:column;gap:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:16px;}
+@media(min-width:760px){.bi-row{flex-direction:row;align-items:center;}}
+.bi-icon{width:54px;height:54px;border:1px solid var(--border);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;background:var(--surface);flex-shrink:0;}
+.bi-info{flex:1;}
+.bi-name{font-size:1.15rem;font-weight:800;font-family:var(--font-disp);margin-bottom:6px;}
+.bi-meta{font-size:.85rem;color:var(--muted);font-weight:600;}
 
-@media print{body{background:#fff!important;color:#333!important;}.cover{height:100vh;}.ds,.map-section,.sec{break-inside:avoid;}.tb{display:none!important;}}
-@media(max-width:600px){.cover h1{font-size:32px;}.cr,.cr.r{flex-direction:column;}.cp{width:100%;min-height:120px;}}
+table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-2);}
+th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--border);}
+th{background:var(--accent-soft);font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);}
+tr:last-child td{border-bottom:none;}
+td{font-weight:600;}
+
+/* ============ 天气 ============ */
+.wf-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px;margin-bottom:18px;}
+.wf{border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:center;background:var(--surface-2);}
+.wd{font-weight:800;font-size:1.05rem;}
+.ww{font-size:2.4rem;margin:10px 0;}
+.wt{font-weight:600;color:var(--muted);}
+.ws-row{display:flex;flex-wrap:wrap;gap:10px;}
+.ws{border:1px solid var(--border);border-radius:999px;padding:7px 14px;font-weight:600;font-size:.82rem;background:var(--surface-2);}
+
+/* ============ 预算 ============ */
+.bg{display:flex;flex-direction:column;gap:14px;}
+.bi{display:flex;align-items:center;gap:14px;font-weight:600;}
+.bn{width:90px;font-weight:800;}
+.bv{width:96px;font-weight:800;font-size:1.05rem;color:var(--accent);}
+.bp{width:48px;color:var(--muted);font-size:.85rem;}
+.bb{height:10px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:999px;flex:1;min-width:40px;}
+.bt{margin-top:22px;padding-top:16px;border-top:2px solid var(--border);font-family:var(--font-disp);font-weight:800;font-size:1.3rem;}
+
+/* ============ 美食 / 建议 ============ */
+.fg{display:flex;gap:10px;flex-wrap:wrap;}
+.fc{padding:9px 16px;border:1px solid var(--border-strong);border-radius:999px;font-weight:800;background:var(--surface-2);}
+.ts ul.tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;}
+.ts ul.tl li{padding:16px 18px;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--radius-sm);background:var(--surface-2);font-weight:600;font-size:.95rem;}
+.ts ul.tl li.tip-day{font-size:.95rem;font-weight:600;}
+
+/* ============ 地图 ============ */
+.map-controls{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.mt{border:1px solid var(--border-strong);padding:9px 16px;font-weight:800;font-size:.82rem;border-radius:999px;background:var(--surface-2);color:var(--text);transition:.2s;cursor:pointer;}
+.mt:hover,.mt.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.map-container{height:64vh;min-height:420px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+.map-fallback{padding:40px;text-align:center;color:var(--muted);font-weight:600;}
+
+footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-align:center;font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.04em;}
+
+/* 响应式微调 */
+@media(max-width:520px){.cover-meta{gap:8px;}.meta-pill{font-size:.78rem;padding:7px 11px;}}
 </style>
 </head>
-<body>
+<body class="antialiased">
 
-<button class="tb" onclick="tt()" title="切换主题">🌙</button>
-
-<div class="cover">
-    {% if '+' in city %}
-    <h1>{{ city.replace('+', ' + ') }} · {{ trip_label }}</h1>
-    <div class="cs">多城市串联 · 美食与景点深度体验</div>
-    {% else %}
-    <h1>{{ city }} · {{ trip_label }}</h1>
-    <div class="cs">美食与景点 · 深度体验指南</div>
-    {% endif %}
-    <div class="ci"><span>📅 {{ date_range_str }}</span><span>🏠 {{ accommodation or '市中心' }}</span><span>🍽️ 美食 · 🏛️ 景点</span>{% if cover_extra_html %}<span>{{ cover_extra_html }}</span>{% endif %}</div>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> TripGenius<span style="color:var(--muted);font-weight:500;"> · 行程手册</span></div>
+  <button class="theme-btn" onclick="toggleT()" id="themeBtn">
+    <svg id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <span id="themeTxt">深色</span>
+  </button>
 </div>
 
-{{ day_html|safe }}
+<div class="wrap">
 
-{{ hotel_html|safe }}
+  <!-- 封面 -->
+  <header class="cover">
+    <span class="cover-eyebrow">✈️ AI 定制行程</span>
+    <h1>{% if '+' in city %}{{ city.replace('+', ' + ') }}{% else %}{{ city }}{% endif %}</h1>
+    <div class="trip-label">{{ trip_label }}</div>
+    <div class="cover-meta">
+      <span class="meta-pill"><span class="ic">📅</span><b>{{ date_range_str or '出行日期' }}</b></span>
+      <span class="meta-pill"><span class="ic">🏠</span><b>{{ accommodation or '市中心' }}</b></span>
+      {% if cover_extra_html %}<span class="meta-pill"><span class="ic">🧭</span>{{ cover_extra_html }}</span>{% endif %}
+      {% if research_source == 'default_pois' %}<span class="src-badge">⚠ 景点数据来源：内置推荐库（未连接小红书）</span>{% endif %}
+    </div>
+  </header>
 
-{{ transport_html|safe }}
+  <main class="flex-col" style="display:flex;flex-direction:column;gap:8px;">
 
-{{ tickets_html|safe }}
+    {{ day_html|safe }}
 
-{{ tips_html|safe }}
-
-{{ weather_html|safe }}
-
-{{ budget_html|safe }}
-
-<!-- 交互式地图（按日切换） -->
-<div class="map-section">
-    <h2>🗺️ 行程地图</h2>
-    <div class="map-tabs">
-        <button class="mt" data-day="all" onclick="switchMapDay('all')">📍 全部</button>
+    <!-- 地图（核心交互） -->
+    <section>
+      <div class="section-title"><span class="bar"></span>行程地图<span class="sub">逐日路线 · 酒店联动</span></div>
+      <div class="map-controls">
+        <button class="mt active" data-day="all" onclick="switchMapDay('all')">全程路线</button>
         {% for day_map_label in day_map_labels %}
-        <button class="mt{% if loop.first %} active{% endif %}" data-day="{{ day_map_label.day }}" onclick="switchMapDay({{ day_map_label.day }})">Day {{ day_map_label.day }}</button>
+        <button class="mt" data-day="{{ day_map_label.day }}" onclick="switchMapDay({{ day_map_label.day }})">第 {{ day_map_label.day }} 天</button>
         {% endfor %}
-        <button class="mt" data-day="hotel" onclick="switchMapDay('hotel')">🏨 住宿</button>
-    </div>
-    <div class="legend">
-        <span><span class="legend-dot" style="background:#64b4ff"></span>景点</span>
-        <span><span class="legend-dot" style="background:#ff6b35"></span>餐厅</span>
-        <span><span class="legend-dot" style="background:#10b981"></span>住宿</span>
-    </div>
-    <div id="map"></div>
+        <button class="mt" data-day="hotel" onclick="switchMapDay('hotel')">酒店</button>
+      </div>
+      <div id="map" class="map-container"></div>
+      <div id="mapFallback" class="map-fallback" style="display:none;">地图组件加载失败（可能处于离线环境）。行程与酒店信息不受影响。</div>
+    </section>
+
+    {{ transport_html|safe }}
+
+    {{ hotel_html|safe }}
+
+    {{ tickets_html|safe }}
+
+    {{ weather_html|safe }}
+
+    {{ budget_html|safe }}
+
+    {{ tips_html|safe }}
+
+    {{ food_highlights_html|safe }}
+
+  </main>
+
+  <footer>
+    Curated by TripGenius · 地理数据 © 高德地图 · 生成于 {{ generated_ts }}
+  </footer>
+
 </div>
-
-{{ food_highlights_html|safe }}
-
-<div class="ft">Generated by Hermes AI · 高德地图数据支持 · {{ generated_ts }}</div>
-<div class="ft flyai-powered">🏨 酒店数据由 <a href="https://flyai.open.fliggy.com" target="_blank" rel="noopener" style="color:#f97316;text-decoration:none;">飞猪AI开放平台 (FlyAI)</a> 提供 · 点击「🛒 飞猪预订」跳转预订 · 推广者ID: 关联API Key</div>
 
 <script>
-function tt(){
-    var h=document.documentElement;
-    var n=h.getAttribute('data-theme')==='dark'?'light':'dark';
-    h.setAttribute('data-theme',n);
-    document.querySelector('.tb').textContent=n==='dark'?'🌙':'☀️';
+/* ===== 主题切换（持久化） ===== */
+function applyTheme(isDark){
+  var h=document.documentElement;
+  if(isDark){h.classList.add('dark');h.classList.remove('light');document.getElementById('themeTxt').textContent='浅色';}
+  else{h.classList.remove('dark');h.classList.add('light');document.getElementById('themeTxt').textContent='深色';}
+  if(window.__mapReady) renderMap(currentDay);
 }
+function toggleT(){applyTheme(!document.documentElement.classList.contains('dark'));try{localStorage.setItem('tg-theme',document.documentElement.classList.contains('dark')?'dark':'light');}catch(e){}}
+(function(){
+  var saved=null;try{saved=localStorage.getItem('tg-theme');}catch(e){}
+  var sysDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved? saved==='dark' : sysDark);
+})();
 
-// 地图 - 按日切换
-var map = L.map('map',{zoomControl:true,attributionControl:false});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
-
-var allItems = {{ map_items_json|safe }};
-var allHotels = {{ all_hotels_json|safe }};
-var markers = [];
-var polylines = [];
-var currentDay = 'all';
-var dayColors = ['hsl(210,70%,50%)','hsl(240,70%,50%)','hsl(330,70%,50%)','hsl(30,70%,50%)','hsl(150,70%,50%)','hsl(270,70%,50%)','hsl(0,70%,50%)'];
-
-// 每天被选中的酒店索引 (默认选第一家)
-var selectedHotels = {};
-allHotels.forEach(function(h){
-    if(selectedHotels[h.day] === undefined) selectedHotels[h.day] = 0;
+/* ===== 将内联背景图转换为懒加载 img ===== */
+document.addEventListener("DOMContentLoaded",function(){
+  document.querySelectorAll('.cp').forEach(function(el){
+    var s=el.getAttribute('style')||'';
+    var m=s.match(/url\(['"]?(.*?)['"]?\)/);
+    if(m&&m[1]){var img=document.createElement('img');img.src=m[1];img.loading='lazy';img.alt='';el.appendChild(img);}
+    el.removeAttribute('style');
+  });
+  document.querySelectorAll('.hpic').forEach(function(el){el.loading='lazy';});
 });
 
-function getItemColor(item) {
-    if(item.type==='hotel') return '#10b981';
-    if(item.type) return '#ff6b35';
-    return dayColors[(item.day-1)%dayColors.length];
-}
-function getItemLabel(item) {
-    if(item.type==='hotel') return '🏨';
-    if(item.type) return '🍴';
-    return item.day;
-}
+/* ===== 地图（Leaflet） ===== */
+var map=null,allItems={{ map_items_json | safe }},allHotels={{ all_hotels_json | safe }},markers=[],polylines=[],currentDay='all';
+var selectedHotels={};
+allHotels.forEach(function(h){if(selectedHotels[h.day]===undefined)selectedHotels[h.day]=0;});
 
-function renderMap(day) {
-    markers.forEach(function(m){map.removeLayer(m);});
-    polylines.forEach(function(p){map.removeLayer(p);});
-    markers = [];
-    polylines = [];
-    var items;
-    if(day === 'all') {
-        items = allItems.filter(function(i){
-            if(i.type==='hotel') return i.hIdx === selectedHotels[i.day];
-            return true;
-        });
-    } else if(day === 'hotel') {
-        items = allItems.filter(function(i){return i.type==='hotel' && i.hIdx === selectedHotels[i.day];});
-    } else {
-        items = allItems.filter(function(i){
-            if(i.type==='hotel') return i.day === day && i.hIdx === selectedHotels[i.day];
-            return i.day === day;
-        });
-    }
-    var orderedCoords = [];
-    items.forEach(function(item,i){
-        if(!item.loc||item.loc.length<2) return;
-        var color = getItemColor(item);
-        var label = getItemLabel(item);
-        var icon = L.divIcon({
-            html:'<div style="width:30px;height:30px;border-radius:50%;background:'+color+';color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.8);box-shadow:0 2px 10px rgba(0,0,0,0.35);">'+label+'</div>',
-            className:'',iconSize:[30,30],iconAnchor:[15,15]
-        });
-        var m = L.marker([item.loc[1],item.loc[0]],{icon:icon}).addTo(map);
-        var ptype = item.type==='hotel'?'<br>🏨 推荐住宿':(item.type?'<br>🍴 推荐餐厅':'');
-        m.bindPopup('<b>'+item.name+'</b>'+(item.time?'<br>🕐 '+item.time:'')+ptype);
-        markers.push(m);
-        orderedCoords.push([item.loc[1],item.loc[0]]);
-    });
-    // 画路线连线
-    if(orderedCoords.length>=2 && day !== 'hotel') {
-        var lineColor = typeof day === 'number' ? dayColors[(day-1)%dayColors.length] : '#a78bfa';
-        var pl = L.polyline(orderedCoords, {color:lineColor,weight:3,opacity:0.5,dashArray:'8,6'}).addTo(map);
-        polylines.push(pl);
-    }
-    var coords = items.filter(function(i){return i.loc&&i.loc.length>=2;}).map(function(i){return [i.loc[1],i.loc[0]];});
-    if(coords.length>=2) map.fitBounds(L.latLngBounds(coords),{padding:[30,30]});
-    else if(coords.length===1) map.setView(coords[0],13);
+function dayColor(day){
+  var pal=['#0E9F8E','#E08A3C','#3B82C4','#A855A0','#CA8A04','#0EA5A0','#DB5461'];
+  return pal[(day-1)%pal.length];
 }
-
-function switchMapDay(day) {
-    currentDay = day;
-    document.querySelectorAll('.mt').forEach(function(b){b.classList.remove('active');});
-    var btn = document.querySelector('.mt[data-day="'+day+'"]');
-    if(btn) btn.classList.add('active');
-    renderMap(day);
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function renderMap(day){
+  if(!map)return;
+  markers.forEach(function(m){map.removeLayer(m);});polylines.forEach(function(p){map.removeLayer(p);});
+  markers=[];polylines=[];
+  var items;
+  if(day==='all')items=allItems.filter(function(i){return i.type==='hotel'?i.hIdx===selectedHotels[i.day]:true;});
+  else if(day==='hotel')items=allItems.filter(function(i){return i.type==='hotel'&&i.hIdx===selectedHotels[i.day];});
+  else items=allItems.filter(function(i){return i.type==='hotel'?(i.day===day&&i.hIdx===selectedHotels[i.day]):i.day===day;});
+  var coords=[];
+  items.forEach(function(item){
+    if(!item.loc||item.loc.length<2)return;
+    var isHotel=item.type==='hotel';
+    var color=isHotel?'#E08A3C':(item.unresolved?'#C2680E':dayColor(item.day||1));
+    var label=isHotel?'H':(item.unresolved?'?':(item.type==='food'?'F':(item.day||'')));
+    var dash=item.unresolved?'border:2px dashed #fff;':'border:2px solid #fff;';
+    var icon=L.divIcon({html:'<div style="width:30px;height:30px;border-radius:10px;background:'+color+';color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;'+dash+'box-shadow:0 4px 12px rgba(0,0,0,.35);">'+label+'</div>',className:'',iconSize:[30,30],iconAnchor:[15,15]});
+    var m=L.marker([item.loc[1],item.loc[0]],{icon:icon}).addTo(map);
+    m.bindPopup('<div style="font-family:Inter;font-weight:800;font-size:14px;color:#15233b;">'+esc(item.name)+'</div>'+(item.unresolved?'<div style="color:#C2680E;font-size:12px;font-weight:700;">📍 位置待核实</div>':''));
+    markers.push(m);coords.push([item.loc[1],item.loc[0]]);
+  });
+  if(coords.length>=2&&day!=='hotel'){var pl=L.polyline(coords,{color:'#0E9F8E',weight:4,opacity:.85,dashArray:'1,8'}).addTo(map);polylines.push(pl);}
+  if(coords.length>=2)map.fitBounds(L.latLngBounds(coords),{padding:[40,40]});
+  else if(coords.length===1)map.setView(coords[0],14);
 }
-
-function selectHotel(day, idx) {
-    selectedHotels[day] = idx;
-    // 更新酒店卡片 UI
-    document.querySelectorAll('.hc[data-day="'+day+'"]').forEach(function(card){
-        var ci = parseInt(card.getAttribute('data-idx'));
-        if(ci === idx) {
-            card.classList.add('selected');
-            card.querySelector('.hc-check').textContent = '✓';
-        } else {
-            card.classList.remove('selected');
-            card.querySelector('.hc-check').textContent = '';
-        }
-    });
-    renderMap(currentDay);
+function switchMapDay(day){
+  currentDay=day;
+  document.querySelectorAll('.mt').forEach(function(b){b.classList.remove('active');});
+  var btn=document.querySelector('.mt[data-day="'+day+'"]');if(btn)btn.classList.add('active');
+  renderMap(day);
 }
-
-renderMap(1);
+function selectHotel(day,idx){
+  selectedHotels[day]=idx;
+  document.querySelectorAll('.hc[data-day="'+day+'"]').forEach(function(card){
+    var ci=parseInt(card.getAttribute('data-idx'));
+    var check=card.querySelector('.hc-check');
+    if(ci===idx){card.classList.add('selected');if(check)check.textContent='✓';}
+    else{card.classList.remove('selected');if(check)check.textContent='';}
+  });
+  if(currentDay==='hotel'||currentDay===day||currentDay==='all')renderMap(currentDay);
+}
+function initMap(){
+  if(typeof L==='undefined'){document.getElementById('map').style.display='none';document.getElementById('mapFallback').style.display='block';return;}
+  var dark=document.documentElement.classList.contains('dark');
+  var tile=dark
+    ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  map=L.map('map',{zoomControl:true,attributionControl:false});
+  L.tileLayer(tile,{maxZoom:18,subdomains:'abcd'}).addTo(map);
+  window.__mapReady=true;
+  setTimeout(function(){renderMap('all');},200);
+}
+initMap();
 </script>
 </body>
 </html>

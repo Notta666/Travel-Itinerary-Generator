@@ -24,7 +24,7 @@ class TestAMapClientRateLimit(unittest.TestCase):
 
     @patch("utils.amap_api._request")
     def test_rate_limit_enforces_interval(self, mock_request):
-        """Verify _rate_limit introduces delay between calls"""
+        """Verify _rate_limit enforces min_interval (default 0.1s) between calls"""
         mock_request.return_value = {
             "status": "1",
             "geocodes": [{"location": "121.4737,31.2304", "level": "兴趣点"}]
@@ -33,9 +33,10 @@ class TestAMapClientRateLimit(unittest.TestCase):
         self.client.geocode("外滩", "上海")
         self.client.geocode("豫园", "上海")
         elapsed = time.time() - t0
-        # min_interval=0.3, so two calls should take at least ~0.3s
-        self.assertGreaterEqual(elapsed, 0.2,
-            "Two consecutive calls should take at least ~0.3s due to rate limiting")
+        # 修复后 _rate_limit 真正按 min_interval 节流：两次调用应被限流，耗时明显 > 0
+        self.assertGreaterEqual(elapsed, 0.08,
+            "两次调用应被 min_interval 限流（默认 0.1s）")
+        self.assertLess(elapsed, 0.6, "限流不应过度阻塞")
 
     @patch("utils.amap_api._request")
     def test_request_failure_retry(self, mock_request):

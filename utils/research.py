@@ -25,20 +25,69 @@ def _find_opencli():
     """查找 opencli 可执行文件路径"""
     which = shutil.which("opencli")
     if which:
-        return os.path.abspath(which)
+        absp = os.path.abspath(which)
+        # Windows: prefer .cmd wrapper over bare shell script
+        if os.name == "nt":
+            cmd_path = absp + ".cmd"
+            if os.path.isfile(cmd_path):
+                return cmd_path
+        return absp
     candidates = [
         os.path.expanduser("~/AppData/Roaming/npm/opencli"),
         os.path.expanduser("~/AppData/Roaming/npm/opencli.cmd"),
         os.path.expanduser("~/.npm-global/bin/opencli"),
+        os.path.expanduser("~/.npm-global/bin/opencli.cmd"),
     ]
     for p in candidates:
         abs_p = os.path.abspath(p)
-        if os.path.isfile(abs_p) or os.path.isfile(abs_p + ".cmd"):
-            return abs_p if os.path.isfile(abs_p) else abs_p + ".cmd"
+        if abs_p.endswith(".cmd") and os.path.isfile(abs_p):
+            return abs_p
+        if os.path.isfile(abs_p):
+            # On Windows, try .cmd variant first
+            if os.name == "nt":
+                cmd_p = abs_p + ".cmd"
+                if os.path.isfile(cmd_p):
+                    return cmd_p
+            return abs_p
+        if os.path.isfile(abs_p + ".cmd"):
+            return abs_p + ".cmd"
     return None
 
 
 _OPENCLI = _find_opencli()
+
+
+def check_opencli_status():
+    """
+    检查 OpenCLI 是否安装，以及 Chrome 扩展是否连接、小红书账号是否已登录。
+    返回: (ok: bool, message: str, details: dict)
+    """
+    opencli_path = _find_opencli()
+    if not opencli_path:
+        return False, "未在系统中检测到 OpenCLI 命令。请使用 npm 命令全局安装：npm install -g @jackwener/opencli", {"code": "NOT_INSTALLED"}
+
+    try:
+        # 通过 opencli daemon status 进行毫秒级连通性检测
+        daemon_res = subprocess.run(
+            [opencli_path, "daemon", "status"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
+        )
+        d_out = (daemon_res.stdout or "") + (daemon_res.stderr or "")
+
+        if "Daemon: not running" in d_out or "Daemon: stopped" in d_out:
+            return False, "OpenCLI 后台服务未运行！请在终端运行 `opencli daemon restart` 启动服务。", {"code": "DAEMON_NOT_RUNNING"}
+
+        if "Extension: not connected" in d_out or "Profiles: none" in d_out:
+            return False, "OpenCLI Chrome 插件未连接！请在 Chrome 浏览器中打开小红书网页，并确保右侧 OpenCLI 扩展程序处于已连接状态。", {"code": "BROWSER_NOT_CONNECTED"}
+
+        if "Extension: connected" in d_out or "Profiles:" in d_out:
+            return True, "OpenCLI 服务及 Chrome 插件连通正常！", {"code": "OK"}
+
+        return True, "OpenCLI 检查完成！", {"code": "OK"}
+    except subprocess.TimeoutExpired:
+        return False, "OpenCLI 服务响应超时，请检查 OpenCLI daemon 及 Chrome 扩展程序是否处于运行状态。", {"code": "TIMEOUT"}
+    except Exception as e:
+        return False, f"OpenCLI 检查发生异常: {str(e)}", {"code": "EXCEPTION"}
 
 
 class XiaoHongShu:
@@ -212,7 +261,9 @@ class XiaoHongShu:
     # ================================================================
 
     def _generate_simulated_notes(self, query, limit=5):
-        """利用 LLM 生成仿真的小红书笔记和评论进行高品质兜底"""
+        """利用 LLM 生成仿真的小红书笔记和评论进行高品质兜底
+        # DEPRECATED: LLM 仿真降级已禁用
+        """
         import hashlib
         from utils.llm import LLMClient
 

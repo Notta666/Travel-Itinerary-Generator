@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.7] - 2026-08-09
+### Added
+- **根目录 ASGI 入口**：新增 `main.py` 转发，支持从项目根目录 `uvicorn main:app` 启动 WebApp
+- **测试覆盖增强**：新增 `test_brochure_unresolved.py`（未解析模板变量检查）、`test_geocode_integrity.py`、`test_planner_none_coord.py`，测试套件 45 项全部通过
+
+### Fixed
+- **手册出行建议字体大小不一**：每日提醒 `<li class="dt">` 与 Day 标题 `.dt` 样式类名冲突（每日提醒被误放大为标题字号），改为独立 `tip-day` 类，统一 `font-size:0.95rem`
+- **Day 卡片标题配色不协调**：`.dh` 渐变由蓝紫色系（hsl 210+）改为与主题协调的青绿系（hsl 172+），渐变上文字统一白色
+- **Day 卡片文字未垂直居中**：`.dh` 由 `align-items:baseline` 改为 `align-items:center`，子元素 `line-height:1`，padding 上下微调，实现字形级垂直居中（偏移 ≤3px）
+- **CORS/安全**：`.gitignore` 补充 `webapp/tasks.db`、`.workbuddy/` 排除项；`reports/research_notes.md` 移出版本控制
+
+### Changed
+- **前端交互重构**：WebApp 前端全面重构（样式变量体系、SSE 进度、主题切换、下载/取消按钮），AGY 交付并双轨审查
+
 ## [3.5.6] - 2026-07-01
 ### Removed
 - **完全移除 Playwright 残留**：`utils/playwright_xhs.py` 已删除，README 中所有 Playwright 引用替换为 OpenCLI（文档树、数据源表、注意事项、致谢）

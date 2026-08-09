@@ -110,15 +110,6 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
                         "type": _leg_type,
                         "items": [items[0]]
                     })
-            else:
-                # Mock a leg if flyai failed to find one for inter-city
-                route_str = f"{s_city}-{c.split(',')[0]}"
-                combined_flyai["transport_legs"].append({
-                    "label": f"Day {leg_start_day} {route_str}",
-                    "type": "bus",
-                    "items": [{"price": 100, "segments": [{"duration_min": 120, "dep_time": "09:00", "arr_time": "11:00"}]}]
-                })
-                
             if idx == 0:
                 for key in ("flight", "train", "hotel"):
                     if key in sub_flyai:

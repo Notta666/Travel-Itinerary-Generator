@@ -24,8 +24,11 @@ def step_4_enrich(context):
     def _enrich_by_loc(poi):
         name = poi["name"]
         loc = poi["location"]
+        result = {"name": name, "location": loc, "geo_status": poi.get("geo_status", "resolved")}
+        if not loc:
+            # 位置未解析（数据诚信：不伪造坐标），跳过逆地理编码
+            return name, result
         regeo = amap.reverse_geocode(loc, radius=500, extensions="base")
-        result = {"name": name, "location": loc}
         if regeo:
             ac = regeo.get("addressComponent", {})
             result["address"] = regeo.get("formatted_address", "")
@@ -58,10 +61,11 @@ def step_4_enrich(context):
         detail = enrich_results.get(name)
         poi_info = {
             "name": name,
-            "location": list(loc),
+            "location": list(loc) if loc else None,
             "address": detail.get("address", "") if detail else "",
             "district": detail.get("district", "") if detail else "",
             "nearby_food": [],
+            "geo_status": poi.get("geo_status", "resolved"),
             "complaints": sight_meta.get(name, {}).get("complaints", "无"),
             "highlights": sight_meta.get(name, {}).get("highlights", "无")
         }
@@ -165,15 +169,44 @@ def step_4_enrich(context):
         name = f.get("name", "")
         if name in foods_to_geocode:
             coord = food_coords.get(name)
+            # 计算到各POI的距离，标记最近POI
+            nearby_pois = []
+            if coord and enriched:
+                for poi in enriched:
+                    ploc = poi["location"]
+                    if ploc and len(ploc) >= 2:
+                        dx = (coord[0] - ploc[0]) * 111000 * 0.85  # 经度修正cos(31°)
+                        dy = (coord[1] - ploc[1]) * 111000
+                        dist = (dx*dx + dy*dy) ** 0.5
+                        if dist <= 2000:  # 2km内算附近
+                            nearby_pois.append({"poi": poi["name"], "distance_m": int(dist)})
+            if not nearby_pois and coord and enriched:
+                # 没找到2km内的，取最近的POI
+                best = min(
+                    (abs(coord[0]-p["location"][0])*111000*0.85 + abs(coord[1]-p["location"][1])*111000, p["name"])
+                    for p in enriched if p["location"] and len(p["location"]) >= 2
+                )
+                nearby_pois.append({"poi": best[1], "distance_m": int(best[0])})
+            nearby_pois.sort(key=lambda x: x["distance_m"])
+
             all_food.append({
                 "name": name,
                 "cuisine": f.get("cuisine", ""),
                 "reason": f.get("reason", ""),
                 "rating": "",
-                "location": list(coord) if coord else [121.47, 31.23],
+                "location": list(coord) if coord else None,
                 "complaints": f.get("complaints", "无"),
-                "highlights": f.get("highlights", "无")
+                "highlights": f.get("highlights", "无"),
+                "nearby_pois": nearby_pois[:3],  # 最近3个POI
             })
+            # 同时回填到POI的nearby_food
+            if nearby_pois:
+                for np in nearby_pois:
+                    for poi in enriched:
+                        if poi["name"] == np["poi"]:
+                            if name not in poi["nearby_food"]:
+                                poi["nearby_food"].append(name)
+                            break
 
     if all_food:
         print(f"  🍴 小红书推荐美食: {len(all_food)} 家")

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="AI旅行攻略", version="3.5.6")
+app = FastAPI(title="AI旅行攻略", version="3.5.7")
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 # Static files and templates setup
@@ -38,15 +38,37 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
+@app.get("/api/check-opencli")
+async def check_opencli_route():
+    """Check OpenCLI installation and Xiaohongshu login status."""
+    from utils.research import check_opencli_status
+    ok, msg, details = check_opencli_status()
+    return {"ok": ok, "message": msg, "details": details}
+
+
 @app.post("/generate")
 async def generate(data: dict):
     """Submit a generation task."""
+    from utils.research import check_opencli_status
+    # 小红书调研为可选项：未连接 OpenCLI 时降级为内置推荐库，不再硬拒（与 CLI 行为一致）
+    ok, check_msg, details = check_opencli_status()
+    if not ok:
+        print(f"  ℹ️ 未检测到 OpenCLI/小红书登录态，将使用内置推荐库生成（{check_msg}）")
+
     goal = (data.get("goal") or "").strip()
     enabled_steps = data.get("steps")
+    days = data.get("days")
     people = data.get("people")
     budget = data.get("budget")
     hotel_budget_min = data.get("hotel_budget_min", 300)
     hotel_budget_max = data.get("hotel_budget_max", 500)
+    user_prefs = data.get("prefs", {})
+
+    if not isinstance(enabled_steps, (list, tuple, set)):
+        enabled_steps = ["research", "enrich", "distance", "flyai", "tips"]
+    elif "research" not in enabled_steps:
+        enabled_steps.append("research")
+
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
     if len(goal) > 500:
@@ -56,7 +78,7 @@ async def generate(data: dict):
     # Run in background thread (non-blocking)
     thread = threading.Thread(
         target=_run_pipeline_task,
-        args=(task_id, goal, enabled_steps, people, budget, hotel_budget_min, hotel_budget_max),
+        args=(task_id, goal, enabled_steps, people, budget, hotel_budget_min, hotel_budget_max, user_prefs, days, ok),
         daemon=True,
     )
     thread.start()
@@ -90,12 +112,15 @@ async def get_result(task_id: str):
     """Get the complete brochure page."""
     task = _get_task(task_id)
     if not task:
-        raise HTTPException(404, "任务不存在")
+        return HTMLResponse("<div style='padding:40px;text-align:center;'><h2>任务不存在</h2></div>", status_code=404)
+    if task["status"] == "failed":
+        err_msg = task.get("error", "行程生成失败")
+        return HTMLResponse(f"<div style='padding:40px;text-align:center;color:#e53e3e;font-family:sans-serif;'><h2>生成失败</h2><p>{err_msg}</p></div>", status_code=400)
     if task["status"] != "completed":
-        raise HTTPException(400, f"任务未完成，当前状态: {task['status']}")
+        return HTMLResponse(f"<div style='padding:40px;text-align:center;font-family:sans-serif;'><h2>任务未完成</h2><p>当前状态: {task['status']}</p></div>", status_code=400)
     brochure_html = task.get("result", {}).get("brochure", "")
     if not brochure_html:
-        return HTMLResponse("<h2>手册生成中，请稍后查看</h2>")
+        return HTMLResponse("<div style='padding:40px;text-align:center;font-family:sans-serif;'><h2>手册生成中，请稍后查看</h2></div>")
     return HTMLResponse(brochure_html)
 
 
@@ -120,25 +145,25 @@ async def stream_progress(task_id: str):
 
     if task["status"] == "completed":
         async def _done():
-            yield f"data: {json.dumps({'message': '✅ 任务已完成', 'done': True})}\n\n"
+            yield f"data: {json.dumps({'message': '✅ 任务已完成', 'done': True}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_done(), media_type="text/event-stream")
 
     if task["status"] == "failed":
         err_msg = task.get("error", "")
         async def _failed():
-            yield f"data: {json.dumps({'message': '❌ 失败: ' + err_msg, 'done': True})}\n\n"
+            yield f"data: {json.dumps({'message': '❌ 失败: ' + err_msg, 'done': True, 'failed': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_failed(), media_type="text/event-stream")
 
     seen = len(json.loads(task.get("progress", "[]")))
 
     async def _stream():
         nonlocal seen
-        yield f"data: {json.dumps({'message': '⏳ 任务已提交，等待执行...', 'done': False})}\n\n"
+        yield f"data: {json.dumps({'message': '⏳ 任务已提交，等待执行...', 'done': False}, ensure_ascii=False)}\n\n"
         while True:
             await asyncio.sleep(0.5)
             task = _get_task(task_id)
             if not task:
-                yield f"data: {json.dumps({'message': '❌ 任务已消失', 'done': True})}\n\n"
+                yield f"data: {json.dumps({'message': '❌ 任务已消失', 'done': True, 'failed': True}, ensure_ascii=False)}\n\n"
                 break
             try:
                 progress = json.loads(task.get("progress", "[]"))
@@ -146,13 +171,14 @@ async def stream_progress(task_id: str):
                 progress = []
             if len(progress) > seen:
                 for p in progress[seen:]:
-                    yield f"data: {json.dumps({'message': p.get('message', ''), 'step': p.get('step', ''), 'pct': p.get('pct', 0), 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'message': p.get('message', ''), 'step': p.get('step', ''), 'pct': p.get('pct', 0), 'done': False}, ensure_ascii=False)}\n\n"
                 seen = len(progress)
             if task["status"] == "completed":
-                yield f"data: {json.dumps({'message': '✅ 任务完成', 'done': True})}\n\n"
+                yield f"data: {json.dumps({'message': '✅ 任务完成', 'done': True}, ensure_ascii=False)}\n\n"
                 break
             if task["status"] == "failed":
-                yield f"data: {json.dumps({'message': '❌ 失败: ' + task.get('error', ''), 'done': True})}\n\n"
+                err_msg = task.get("error", "")
+                yield f"data: {json.dumps({'message': '❌ 失败: ' + err_msg, 'done': True, 'failed': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
                 break
     return StreamingResponse(_stream(), media_type="text/event-stream")
 

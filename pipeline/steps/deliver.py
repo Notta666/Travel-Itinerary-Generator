@@ -37,6 +37,7 @@ def step_9_deliver(context):
                           start_city=prefs.get("start_city", ""),
                           people_count=prefs.get("people_count", 2),
                           start_date=context.get("start_date", ""),
+                          research_source=prefs.get("research_source", ""),
                           flyai_prices=context.get("flyai_prices", {}))
             context["brochure_path"] = path
             print(f"  📖 手册: {path}")

@@ -157,19 +157,21 @@ def step_3_geocode(context, manual_pois=None):
                         break
 
         if coord and not is_drift:
-            geocoded.append({"name": name, "location": coord})
+            geocoded.append({"name": name, "location": coord, "geo_status": "resolved"})
             print(f"  ✅ {name:20s} → ({coord[0]:.4f}, {coord[1]:.4f})")
         else:
-            h = hash(name)
-            base_lng, base_lat = city_centers[0]
-            offset_lng = ((h % 100) - 50) * 0.001
-            offset_lat = (((h // 100) % 100) - 50) * 0.001
-            coord = (base_lng + offset_lng, base_lat + offset_lat)
-            geocoded.append({"name": name, "location": coord})
+            # 数据诚信铁律：编码失败 / 严重漂移且无法纠偏时，不伪造伪坐标。
+            # 显式标记「位置待核实」，由下游地图/手册跳过连线并提示用户人工核对。
+            geocoded.append({
+                "name": name,
+                "location": None,
+                "geo_status": "unresolved",
+                "geo_reason": "drift" if is_drift else "failed",
+            })
             if is_drift:
-                print(f"  🚨 {name:20s} → 严重定位漂移且无法纠偏，降级为首个城市 Mock 邻近坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
+                print(f"  🚨 {name:20s} → 严重定位漂移且无法纠偏，标注「位置待核实」（不生成伪坐标）")
             else:
-                print(f"  ⚠️ {name:20s} → 编码失败，使用 Mock 坐标 ({coord[0]:.4f}, {coord[1]:.4f})")
+                print(f"  ⚠️ {name:20s} → 编码失败，标注「位置待核实」（不生成伪坐标）")
 
     context["poi_geocoded"] = geocoded
     n = len(geocoded)

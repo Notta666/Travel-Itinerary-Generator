@@ -3,8 +3,11 @@
 ========================================
 一本包含: 封面 → 每日行程(图片卡片) → 交互式Leaflet地图 → 必吃推荐 → 交通指南
 """
-import os, json, time, urllib.request, urllib.parse, re, datetime, logging, threading
+import os, json, time, urllib.request, urllib.parse, re, datetime, logging, threading, html
 from utils.config import AMAP_KEY, BASE_DIR
+
+# HTML 转义辅助：所有注入进手册 HTML 的外部/LLM 派生文本必须经此转义，防 XSS
+_esc = html.escape
 
 logger = logging.getLogger("travel_pipeline")
 _photo_cache = {}
@@ -140,7 +143,7 @@ def _color_for(name, is_food):
     return pool[hash(name) % len(pool)]
 
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
-                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None):
+                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source=""):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
     date_range_str = ""
     if weather and weather.get("forecast"):
@@ -285,7 +288,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     f'<div class="hc-check">{"✓" if hi == 0 else ""}</div>'
                     f'{pic_html}'
                     f'<div class="hc-info">'
-                    f'<div class="hc-row1"><span class="hn"><span class="hdy">{label_tag}</span> {h["name"]}</span><span class="hsg">⭐{rating_display}</span></div>'
+                    f'<div class="hc-row1"><span class="hn"><span class="hdy">{label_tag}</span> {_esc(h["name"])}</span><span class="hsg">⭐{rating_display}</span></div>'
                     f'<div class="hc-row2"><span class="{cost_class}">{cost_display}</span>'
                     f'{f"<span class=hdi>{dist_display}</span>" if dist_display else ""}'
                     f'{tel_html}{book_btn}</div>'
@@ -309,6 +312,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         day_html = ""
         for si, s in enumerate(slots):
             d, is_food = s["data"], s["type"]=="food"
+            d_loc = d.get("location")
             photos = s["photos"]
             has_photo = bool(photos)
             photo_url = photos[0] if has_photo else ""
@@ -342,16 +346,18 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 else:
                     t_icon = "🚗"
                 tags.append(f'<span class="t tr">{t_icon} {transit_text}</span>')
-            overlay = f'<div class="po">{name_short}</div>' if not has_photo else ""
-            all_items_flat.append({"name":d["name"],"loc":d.get("location",[121.47,31.23]),"type":is_food,"day":day["day"],"time":d.get("time_slot","")})
+            if not d_loc:
+                tags.append('<span class="t tr">📍 位置待核实</span>')
+            overlay = f'<div class="po">{_esc(name_short)}</div>' if not has_photo else ""
+            all_items_flat.append({"name":d["name"],"loc":list(d_loc) if d_loc else None,"unresolved": not d_loc,"type":is_food,"day":day["day"],"time":d.get("time_slot","")})
             day_html += f"""
             <div class="cr {side}">
                 <div class="cp" {bg}>{overlay}<div class="cb">{badge}</div></div>
                 <div class="cc">
-                    <h3>{icon} {d['name']}</h3>
+                    <h3>{icon} {_esc(d['name'])}</h3>
                     <div class="tw">{' '.join(tags)}</div>
-                    {f'<p class="ad">{d.get("address","")[:45]}</p>' if d.get("address") else ''}
-                    {f'<p class="nt">{d.get("note","")}</p>' if d.get("note") else ''}
+                    {f'<p class="ad">{_esc(d.get("address",""))[:45]}</p>' if d.get("address") else ''}
+                    {f'<p class="nt">{_esc(d.get("note",""))}</p>' if d.get("note") else ''}
                 </div>
             </div>"""
 
@@ -363,18 +369,19 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 d_label = f"{dt_obj.month}月{dt_obj.day}日"
             except Exception:
                 pass
+        _hue = 172 + di * 10
         day_html_parts.append(f"""
         <div class="ds">
-            <div class="dh" style="background:linear-gradient(135deg,hsl({210+di*30},70%,50%),hsl({210+di*30},70%,30%));">
+            <div class="dh" style="background:linear-gradient(135deg,hsl({_hue},70%,50%),hsl({_hue},70%,30%));">
                 <div class="dn">Day {day['day']}</div>
-                <div class="dt">{day.get('label','')}</div>
+                <div class="dt">{_esc(day.get('label',''))}</div>
                 <div class="dd">{d_label}</div>
             </div>
-            {f'<div class="dsm">{day.get("summary","")}</div>' if day.get("summary") else ''}
+            {f'<div class="dsm">{_esc(day.get("summary","") )}</div>' if day.get("summary") else ''}
             <div class="ccont">{day_html}</div>
         </div>""")
 
-    map_items_json = json.dumps(all_items_flat, ensure_ascii=False)
+    map_items_json = json.dumps(all_items_flat, ensure_ascii=False).replace("</", "<\\/")
 
     thtml = ""
     if tips:
@@ -390,7 +397,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 items.append(f'<li class="pt">🎯 {p}</li>')
         if daily:
             for d in daily[:3]:
-                items.append(f'<li class="dt">📅 {d}</li>')
+                items.append(f'<li class="tip-day">📅 {d}</li>')
         if emergency:
             items.append(f'<li class="em">⚠️ {emergency}</li>')
         if items:
@@ -415,6 +422,13 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         <h2>🌤️ {weather["city"]} 天气预报</h2>
         <div class="wf-row">{cards}</div>
         <div class="ws-row">{wx_sug}</div>
+    </div>"""
+    elif weather:
+        # 天气源全部失败：诚实标注缺失，不展示伪造数据（数据诚信铁律）
+        whtml = f"""
+    <div class="sec wx">
+        <h2>🌤️ 天气预报</h2>
+        <div class="note-box">⚠️ {_esc(weather.get('note', '天气数据暂缺'))}</div>
     </div>"""
 
     budget_html = ""
@@ -490,16 +504,12 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
     _bk = flyai_prices or {}
     _booking_items = []
     
-    # 打印调试日志确认传入的 flyai_prices 结构与内容
-    print(f"[DEBUG] utils/brochure/__init__.py: flyai_prices available = {_bk.get('available')}")
-    print(f"[DEBUG] utils/brochure/__init__.py: flight keys = {list(_bk.get('flight', {}).keys()) if _bk.get('flight') else 'None'}")
-    print(f"[DEBUG] utils/brochure/__init__.py: train keys = {list(_bk.get('train', {}).keys()) if _bk.get('train') else 'None'}")
-    print(f"[DEBUG] utils/brochure/__init__.py: hotel keys = {list(_bk.get('hotel', {}).keys()) if _bk.get('hotel') else 'None'}")
-    print(f"[DEBUG] utils/brochure/__init__.py: ticket count = {len(_bk.get('tickets', {})) if _bk.get('tickets') else 0}")
-    
     # 飞猪 API 无返回时跳过——不做假数据（数据诚信铁律）
 
     has_bk_data = _bk.get("available") or any(k in _bk for k in ("flight", "train", "transport_legs", "hotel_groups", "tickets"))
+    # 酒店/门票渲染变量在分支外（函数级）初始化，避免无预订数据时未定义导致渲染崩溃
+    ticket_items = []
+    tickets_html = ""
     if has_bk_data:
         # 交通行程安排
         _tlegs = _bk.get("transport_legs", [])
@@ -635,6 +645,8 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 tag = f'<span style="background:var(--primary);color:#fff;padding:2px 4px;border-radius:4px;font-size:10px;margin-right:6px;">推荐 {i+1}</span>'
                 hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_bh.get("main_pic", "")}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_bh["name"]}</div><div class="bi-meta">¥{_bh["price"]:.0f}/晚 · {_bh.get("star", "星级")} · {hg.get("source", "飞猪实时")} · 开业/装修: {_bh.get("decoration_time", "未知")}</div></div><div class="bi-action">{_hbtn}</div></div>')
 
+        # 重置酒店区块（预订板块替换逐日卡片）；门票/门票HTML已在函数级初始化
+        hotel_html_parts = []
         # 覆盖 LLM 生成的酒店，替换为强化的备选列表
         if hotel_items_html:
             hotel_html_parts = [f"""
@@ -643,7 +655,6 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         <div class="booking-list">{''.join(hotel_items_html)}</div>
     </div>"""]
         # 门票
-        ticket_items = []
         _tks = _bk.get("tickets", {})
         if _tks:
             for _day in (itinerary or []):
@@ -670,9 +681,8 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                                 </div>
                             </details>
                             """
-                            ticket_items.append(f'<div class="bi-row" style="flex-direction:column; align-items:stretch;"><div style="display:flex; gap:12px; align-items:center;"><div class="bi-icon">🎫</div><div class="bi-info"><div class="bi-name">{_n}</div></div></div>{ticket_details}</div>')
+                            ticket_items.append(f'<div class="bi-row" style="flex-direction:column; align-items:stretch;"><div style="display:flex; gap:12px; align-items:center;"><div class="bi-icon">🎫</div><div class="bi-info"><div class="bi-name">{_esc(_n)}</div></div></div>{ticket_details}</div>')
         
-        tickets_html = ""
         if ticket_items:
             tickets_html = f"""
     <div class="sec booking-section">
@@ -711,17 +721,18 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         day_map_labels=day_map_labels,
         map_items_json=map_items_json,
         all_hotels_json=json.dumps(all_hotels_data, ensure_ascii=False),
+        research_source=research_source,
         generated_ts=ts,
     )
     return html
 
 
-def generate(city="上海", itinerary=None, food_highlights=None, overall_note="", transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, start_date="", flyai_prices=None):
+def generate(city="上海", itinerary=None, food_highlights=None, overall_note="", transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, start_date="", flyai_prices=None, research_source=""):
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
     html = generate_brochure(itinerary, city, food_highlights, overall_note,
-                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices)
+                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices, research_source=research_source)
     outputs_dir = os.path.join(BASE_DIR, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     safe_city = re.sub(r'[^\w\u4e00-\u9fa5\-\.]', '_', city)

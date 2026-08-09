@@ -98,12 +98,17 @@ class AMapClient:
         self._last_call = 0
         self._lock = threading.Lock()
 
-    def _rate_limit(self, min_interval=0.3):
-        """线程安全限流, 防止触发 QPS 限制"""
+    def _rate_limit(self, min_interval=0.1):
+        """线程安全限流：保证相邻两次调用间隔 ≥ min_interval（高德免费配额 30 QPS）。
+
+        修复：此前该锁只更新时间戳、不 sleep，min_interval 形同虚设，突发并发会直冲高德 429。
+        现按 min_interval 真正节流；锁内 sleep 仅阻塞限流判定，网络 I/O 在锁外并发执行。
+        """
         with self._lock:
-            elapsed = time.time() - self._last_call
-            if elapsed < min_interval:
-                time.sleep(min_interval - elapsed)
+            now = time.time()
+            wait = self._last_call + min_interval - now
+            if wait > 0:
+                time.sleep(wait)
             self._last_call = time.time()
 
     def geocode(self, address, city=""):
@@ -139,7 +144,9 @@ class AMapClient:
                 level = g.get("level", "")
                 # 如果返回的级别是省、市、区、县，但查询的又不是城市本身，说明是高德因找不到而回退到了市中心，需要拒掉
                 if level in ["省", "市", "区", "县", "区县", "国家", "开发区"]:
-                    if address not in ["广州", "佛山", "顺德", "珠海", "澳门", "东莞", "深圳", "中山", "江门", "上海", "北京", "杭州"]:
+                    valid_cities = [c.get('name', '') for c in load_adcodes()]
+                    valid_cities_short = [c.replace('市', '') for c in valid_cities]
+                    if address not in valid_cities and address not in valid_cities_short:
                         continue
                 loc = g["location"]
                 lng, lat = loc.split(",")

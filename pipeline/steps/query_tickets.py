@@ -54,12 +54,17 @@ def step_7_query_tickets(context):
         return context
 
     ticket_data = {}
-    for p in poi_names:
-        time.sleep(3.5)  # 主动增加延时，防止高频并发触发风控
+    def _fetch_ticket(p):
         try:
-            ticket_data[p["name"]] = client.query_poi_ticket(p["name"], p["city"])
-        except Exception as e:
-            ticket_data[p["name"]] = {"price_min": None, "price_max": None, "source": "fail"}
+            return p["name"], client.query_poi_ticket(p["name"], p["city"])
+        except Exception:
+            return p["name"], {"price_min": None, "price_max": None, "source": "fail"}
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futures = {ex.submit(_fetch_ticket, p): p for p in poi_names}
+        for f in as_completed(futures):
+            name, res = f.result()
+            ticket_data[name] = res
 
     # 第3级降级: Gaode POI 搜索获取门票价格（为 FlyAI 失败的 POI 兜底）
     fail_names = [n for n, td in ticket_data.items() if not td or td.get("source") == "fail"]

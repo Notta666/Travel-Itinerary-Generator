@@ -165,17 +165,29 @@ def _check_custom_image(name):
 
 # ─── 各引擎 ────────────────────────────────────────
 
-def _gaode(name, city="上海"):
+def _gaode(name, city="上海", category=""):
     """高德V5 POI图片（官方API，最可靠）"""
     for _ in range(2):
         try:
             kw = urllib.request.quote(name)
             ct = urllib.request.quote(city)
-            url = f"https://restapi.amap.com/v5/place/text?key={AMAP_KEY}&keywords={kw}&region={ct}&city_limit=true&page_size=1&show_fields=photos"
+            url = f"https://restapi.amap.com/v5/place/text?key={AMAP_KEY}&keywords={kw}&region={ct}&city_limit=true&page_size=10&show_fields=photos"
             with urllib.request.urlopen(url, timeout=10) as r:
                 data = json.loads(r.read())
             if data.get("status") == "1" and data.get("pois"):
-                photos = data["pois"][0].get("photos", [])
+                best_poi = None
+                for p in data["pois"]:
+                    p_name = p.get("name", "")
+                    if name in p_name:
+                        if category == "sight" and any(x in p_name for x in ["酒店", "餐厅", "小区", "公寓", "网吧", "宾馆"]):
+                            continue
+                        if category == "food" and any(x in p_name for x in ["小区", "公寓", "网吧", "酒店", "景点"]):
+                            continue
+                        best_poi = p
+                        break
+                if not best_poi:
+                    best_poi = data["pois"][0]
+                photos = best_poi.get("photos", [])
                 if photos:
                     return [p["url"] for p in photos[:2]]
         except Exception:
@@ -426,7 +438,10 @@ def get_photos(name, city="上海", category=""):
             time.sleep(random.uniform(*_jitter_range))
 
             try:
-                result = engine_fn(query, city)
+                if engine_name == "Gaode":
+                    result = engine_fn(query, city, category)
+                else:
+                    result = engine_fn(query, city)
             except Exception:
                 continue
 

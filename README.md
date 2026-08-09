@@ -89,14 +89,25 @@ python pipeline/run_pipeline.py --goal "出去玩" --city 杭州 --days 3
 提供 FastAPI 网页界面，提供可视化交互与步骤定制，支持浏览器提交任务：
 
 ```bash
-# 启动 Web App 服务器
+# 启动 Web App 服务器（两种方式等价）
 python webapp/main.py
+# 或从项目根目录经 ASGI 入口启动：
+# uvicorn main:app --host 127.0.0.1 --port 8080
 ```
 
 访问 `http://localhost:8080`，即可：
 1. **定制可选生成步骤**：勾选/取消小红书调研、POI地址丰富、驾车距离矩阵和出行建议，自由权衡速度与内容。
 2. **查看内置使用说明**：页面底部提供详尽的使用说明与指引，方便新用户快速上手。
 3. **查看与下载离线攻略**：任务提交后，提供后台异步进度条，完成后网页端直接预览交互手册，并支持一键下载单文件 HTML 离线查看。
+
+> 安全默认：WebApp 默认仅绑定 `127.0.0.1:8080`（本机访问）。如需局域网共享，设置环境变量 `CORS_ORIGINS=*` 并自行评估风险（详见配置说明）。
+
+### 测试
+
+```bash
+python -m pip install pytest
+python -m pytest tests/ -q   # 45 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
+```
 
 ---
 

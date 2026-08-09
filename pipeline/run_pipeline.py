@@ -156,7 +156,15 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                 context = step_4_enrich(context)
         else:
             print("⏭️  跳过 Step 4 POI丰富+美食 (用户配置禁用)")
-            context["poi_enriched"] = [{"name": p["name"], "location": list(p["location"]), "address": "", "district": "", "nearby_food": []} for p in context["poi_geocoded"]]
+            context["poi_enriched"] = [
+                {
+                    "name": p["name"],
+                    "location": list(p["location"]) if p.get("location") else None,
+                    "address": "", "district": "", "nearby_food": [],
+                    "geo_status": p.get("geo_status", "resolved"),
+                }
+                for p in context["poi_geocoded"]
+            ]
             context["food_recommendations"] = []
 
         _check_stop(cancel_event, "Step 5")

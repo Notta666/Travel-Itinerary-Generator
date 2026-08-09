@@ -8,6 +8,20 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger("travel_pipeline")
 
 
+def _safe_parse_fusion(raw):
+    """容错解析 LLM 返回，自动修复 JSON 截断"""
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        for fix in [text + '"}]\n}', text.rsplit(',', 1)[0] + '}]\n}']:
+            try: return json.loads(fix)
+            except: continue
+    return {"days": [], "overall_note": "LLM 返回异常，降级到规则引擎", "food_highlights": []}
+
+
 def _build_lodging_instruction(context):
     """根据 context 动态生成住宿与时间限制规则"""
     city = context.get("city", "")
@@ -69,21 +83,24 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
     # --- 构建输入数据 ---
     pois_data = []
     for p in pois:
-        loc = p["location"]
+        loc = p.get("location")
         pois_data.append({
             "name": p["name"],
-            "lng": loc[0], "lat": loc[1],
+            "lng": loc[0] if loc else None,
+            "lat": loc[1] if loc else None,
             "address": p.get("address", ""),
             "district": p.get("district", ""),
             "complaints": p.get("complaints", "无"),
             "highlights": p.get("highlights", "无")
         })
 
-    food_json = json.dumps([{"name": f["name"], "rating": f.get("rating",""), "cost": f.get("cost",""),
-                             "tag": f.get("tag",""), "address": f.get("address",""),
-                             "complaints": f.get("complaints", "无"),
-                             "highlights": f.get("highlights", "无")} for f in food_list],
-                           ensure_ascii=False, indent=2)
+    food_json = json.dumps([{
+        "name": f["name"], "rating": f.get("rating",""), "cost": f.get("cost",""),
+        "tag": f.get("tag",""), "address": f.get("address",""),
+        "complaints": f.get("complaints", "无"),
+        "highlights": f.get("highlights", "无"),
+        "nearby_pois": f.get("nearby_pois", [])
+    } for f in food_list], ensure_ascii=False, indent=2)
     input_json = json.dumps({"city": city, "days": days, "pois": pois_data,
                              "distance_matrix_km": dist_matrix.get("matrix", []),
                              "labels": dist_matrix.get("labels", [])}, ensure_ascii=False, indent=2)
@@ -135,43 +152,76 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         budget_constraint = "\n".join(parts) + "\n"
     # ---- 结束实时价格注入 ----
 
+    # ---- 用户偏好注入 ----
+    user_prefs = prefs.get("user_prefs", {})
+    user_pref_lines = []
+    if user_prefs:
+        scene = user_prefs.get("scene", [])
+        food = user_prefs.get("food", [])
+        pace = user_prefs.get("pace", "")
+        themes = user_prefs.get("themes", [])
+        if scene:
+            user_pref_lines.append(f"🏛️ 景点偏好: {'、'.join(scene)}")
+        if food:
+            user_pref_lines.append(f"🍽️ 美食偏好: {'、'.join(food)}")
+        if pace:
+            user_pref_lines.append(f"🚶 旅行节奏: {pace}")
+        if themes:
+            user_pref_lines.append(f"🎯 兴趣主题: {'、'.join(themes)}")
+    if user_pref_lines:
+        user_pref_lines.insert(0, "【用户偏好（来自复选框选择）】")
+        user_prefs_section = "\n".join(user_pref_lines) + "\n"
+    else:
+        user_prefs_section = ""
+    # ---- 结束用户偏好注入 ----
+
     format_instruction = '输出JSON: {"days":[{"day":1,"label":"区域","summary":"","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)","slots":[{"type":"sight/food","name":"名称","city":"该景点或餐厅所在的具体城市(如广州/佛山/珠海/澳门)","time":"时段","transit":"","note":"","cuisine":"","cost":"","rating":""}]}]}'
+
+    # ---- 用户明确指定的POI注入 ----
+    manual_pois = context.get("manual_pois", [])
+    manual_pois_instruction = ""
+    if manual_pois:
+        manual_pois_instruction = f"【用户明确要求以下 POI 必须全部安排进行程，不得遗漏】: {'、'.join(manual_pois)}\n"
 
     # ---- Bull Prompt ----
     bull_prompt = f"""你是一名高效派旅行规划师（Bull）。根据用户要求的每日安排和交通动线，规划【景点+美食】一体的高效行程。
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
-{lodging_instruction}
+{manual_pois_instruction}{lodging_instruction}
 {budget_constraint}
 {flyai_section}
+{user_prefs_section}
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
 要求：
 1. 严格遵守【用户特别行程与动线要求】与【特别住宿与时间限制规则】（例如第几天在哪个城市、在哪里住宿、怎么往返等）。
-2. 每个景点配附近餐厅，时间合理。
+2. 每个景点配附近餐厅，时间合理。优先选择 `nearby_pois` 字段中标注了当前景点的餐厅（距离近，顺路）。
 3. 结合赞点（highlights）和避雷吐槽（complaints），合理编排路线。
 4. 【餐饮推荐规则】：每天原则上必须推荐早、中、晚三顿正餐（早餐、午餐、晚餐，类型均为food，并在 time_slot 或 note 中标明），在正餐之间的空闲时段，可以穿插推荐当地特色小吃或甜点（如双皮奶、蛋挞、双皮奶等），并明确标注为小吃或甜点。
 5. ⚠️【全网黑过滤】如果某个菜品/餐厅的 complaints 包含"全网黑""游客陷阱"等关键词，禁止推荐。
 6. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，确保行程总花费不超预算。
+7. 【就近优先】餐厅的 `nearby_pois` 字段标注了该餐厅附近的景点，优先选当天景点附近的餐厅，避免跨区跑远路。
 {format_instruction}"""
 
     # ---- Bear Prompt ----
     bear_prompt = f"""你是一名品质悠闲派旅行规划师（Bear）。针对所有推荐的景点与美食，你需要根据用户评论中的避雷/吐槽进行品质把关。
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
-{lodging_instruction}
+{manual_pois_instruction}{lodging_instruction}
 {budget_constraint}
 {flyai_section}
+{user_prefs_section}
 【景点数据（含真实用户避雷/赞点）】{input_json}
 【城市推荐餐厅（含避雷/赞点）】{food_json}
 
 辩论与筛选要求：
 1. 严格遵守【用户特别行程与动线要求】与【特别住宿与时间限制规则】中的跨城交通、天数和住宿点分配。
 2. **【景点与美食辩论】**：针对每一个包含避雷/吐槽（complaints）的景点或餐厅进行评估。如果避雷点严重（例如：排队超过2小时、虚假宣传、口味难吃/宰客等），你必须在规划时**果断舍弃/替换**该地。
-3. 【餐饮推荐规则】：每天原则上必须包含早、中、晚三顿正餐（早餐、午餐、晚餐，类型为food），每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。在正餐之间的空余时段，可以合理安排推荐特色小吃或甜品（如双皮奶、蛋挞等），但必须标明为小吃/甜点，不要与正餐时间冲突。
+3. 【餐饮推荐规则】：每天原则上必须包含早、中、晚三顿正餐（早餐、午餐、晚餐，类型为food），每餐安排充足时间，重点推荐赞点（highlights）口碑佳的地点。在正餐之间的空余时段，可以合理安排推荐特色小吃或甜品（如双皮奶、蛋挞等），但必须标明为小吃/甜点，不要与正餐时间冲突。优先选择 `nearby_pois` 字段中标注了当前景点附近的餐厅。
 4. ⚠️ 【全网黑过滤】特别注意：如果某个餐厅/菜品的 complaints 中包含"全网黑""游客陷阱""名过其实""避雷"等关键词，或评论区大量出现一致差评，必须将其**彻底从最终行程中移除**，不可仅标注警示。
 5. 【预算约束】：必须参考 {budget_constraint} 中的预算和人数信息，推荐高品质但不超预算的方案。
+6. 【就近优先】餐厅的 `nearby_pois` 字段标注了该餐厅附近的景点，同一天内的餐厅优先选当天景点附近的，避免跨区跑远路。
 {format_instruction}"""
 
     try:
@@ -179,8 +229,8 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         with ThreadPoolExecutor(max_workers=2) as ex:
             f_bull = ex.submit(call_deepseek, "返回纯JSON。", bull_prompt, 0.3, 6000)
             f_bear = ex.submit(call_deepseek, "返回纯JSON。", bear_prompt, 0.3, 6000)
-            bull_raw = f_bull.result()
-            bear_raw = f_bear.result()
+            bull_raw = f_bull.result(timeout=120)
+            bear_raw = f_bear.result(timeout=120)
         bull_result = bull_raw if isinstance(bull_raw, dict) else {}
         bear_result = bear_raw if isinstance(bear_raw, dict) else {}
         # Bear返回0天时重试一次
@@ -216,8 +266,9 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 
 【用户特别行程与动线要求】
 {context.get("goal", "无")}
-{budget_constraint}
+{manual_pois_instruction}{budget_constraint}
 {flyai_section}
+{user_prefs_section}
 Bull高效方案摘要: {bull_summary}
 Bear悠闲避雷方案摘要: {bear_summary}
 
@@ -231,6 +282,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
 4. 在最终输出的 `overall_note` 中，必须包含一段 **【景点与美食辩论纪要】**：列出对于争议景点分析师们的不同看法以及你的最终裁决理由。
 5. 必须严格落实【一日三餐+小吃甜点】规则：最终方案里，每一天原则上都要推荐早餐、午餐、晚餐三顿正餐（标注在时段或note中），其它闲暇时段（下午或夜间）可穿插推荐特色小吃/甜品/夜宵，不能遗漏正餐。
 6. ⚠️ 【全网黑一票否决】如果某餐厅/菜品的 complaints 含"全网黑""游客陷阱"——直接移除，不可保留。Fusion 裁决时优先采纳有明确避雷依据的 Bear 方案。
+7. 【就近优先】餐厅的 `nearby_pois` 字段标注了它附近的景点。同一天内优先选当天景点附近的餐厅，避免跨区远距离移动。
 
 输出JSON:
 {{"days":[{{"day":1,"label":"主题","summary":"概要","accommodation_city":"该天晚上入住城市(如广州/珠海，不留宿为空)",
@@ -240,7 +292,8 @@ Bear悠闲避雷方案摘要: {bear_summary}
   "food_highlights":["必吃1","必吃2"]}}"""
 
         print("  ⚖️ Fusion 综合裁决中...")
-        fusion_result = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=8000)
+        fusion_raw = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=8000)
+        fusion_result = _safe_parse_fusion(fusion_raw)
         days_out = fusion_result.get("days", [])
     except Exception as e:
         print(f"  ⚠️ LLM 路线规划规划失败: {e}，将启动规则引擎降级规划方案。")
@@ -301,12 +354,13 @@ Bear悠闲避雷方案摘要: {bear_summary}
             food_coord_map[fr["name"]] = [float(lng), float(lat)]
     for ep in pois:
         for nf in ep.get("nearby_food", []):
-            nf_loc = nf.get("location", "")
-            if isinstance(nf_loc, (list, tuple)) and len(nf_loc) >= 2:
-                food_coord_map[nf["name"]] = [float(nf_loc[0]), float(nf_loc[1])]
-            elif isinstance(nf_loc, str) and "," in nf_loc:
-                lng, lat = nf_loc.split(",")
-                food_coord_map[nf["name"]] = [float(lng), float(lat)]
+            if isinstance(nf, dict):
+                nf_loc = nf.get("location", "")
+                if isinstance(nf_loc, (list, tuple)) and len(nf_loc) >= 2:
+                    food_coord_map[nf.get("name", "")] = [float(nf_loc[0]), float(nf_loc[1])]
+                elif isinstance(nf_loc, str) and "," in nf_loc:
+                    lng, lat = nf_loc.split(",")
+                    food_coord_map[nf.get("name", "")] = [float(lng), float(lat)]
 
     # 城市中心坐标（用于验证合理性，支持多城）
     cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
@@ -322,15 +376,16 @@ Bear悠闲避雷方案摘要: {bear_summary}
     for d in days_out:
         day_pois, day_foods = [], []
 
-        # 先收集当天所有景点的坐标，用于餐厅坐标失败或偏离时的就近 fallback
+        # 先收集当天所有景点的真实坐标，用于餐厅坐标失败或偏离时的就近 fallback
         day_sight_coords = []
         for s in d.get("slots", []):
             if s.get("type", "sight") != "food":
                 for ep in pois:
-                    if ep["name"] == s["name"]:
+                    if ep["name"] == s["name"] and ep.get("location"):
                         day_sight_coords.append(ep["location"])
                         break
-        fallback_coord = day_sight_coords[0] if day_sight_coords else city_centers[0]
+        # 数据诚信：优先用当天已解析景点的真实坐标做就近回退；无可用真实坐标时回退为 None（不伪造）
+        fallback_coord = day_sight_coords[0] if day_sight_coords else None
 
         for s in d.get("slots", []):
             s_type = s.get("type", "sight")
@@ -361,9 +416,11 @@ Bear悠闲避雷方案摘要: {bear_summary}
                 except Exception:
                     pass
 
+            loc = matched["location"] if matched else fallback_coord
             entry = {
                 "name": name,
-                "location": matched["location"] if matched else list(fallback_coord),
+                "location": list(loc) if loc else None,
+                "geo_status": "resolved" if loc else "unresolved",
                 "address": s.get("address","") or (matched.get("address","") if matched else ""),
                 "rating": s.get("rating","") or (matched.get("rating","") if matched else ""),
                 "cost": s.get("cost","") or (matched.get("cost","") if matched else ""),

@@ -31,6 +31,12 @@ def step_2_research(context, xhs=None, progress_callback=None):
             (f"{c}美食推荐 必吃", "美食"),
             (f"{c}旅游攻略 景点", "景点"),
         ])
+    # 针对手动POI搜索附近美食（优先景点附近的餐厅）
+    manual_pois = context.get("manual_pois", [])
+    if manual_pois:
+        city_name = context.get("city", "")
+        for poi in manual_pois:
+            queries.append((f"{city_name}{poi}附近美食推荐", "美食"))
     for query, label in queries:
         print(f"  📕 搜索{label}: {query}")
         try:
@@ -113,13 +119,14 @@ def step_2_research(context, xhs=None, progress_callback=None):
 
             return content
 
-        for note in active_notes:
+        for i, note in enumerate(active_notes):
             time.sleep(2.5)  # 每篇笔记之间主动等待 2.5s
             try:
+                title = note.get("title", "")
+                _report("research", f"精读小红书笔记及热评 ({i+1}/{len(active_notes)}): {title[:10]}...", 15 + int((i/len(active_notes))*5))
                 res = _fetch_note_and_comments(note)
                 if res:
                     note_contents.append(res)
-                    title = note.get("title", "")
                     print(f"     ✅ {title[:30]}")
             except Exception as e:
                 logger.warning(f"读取小红书笔记失败: {e}")
@@ -152,6 +159,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
  "foods": [{{"name":"名称","city":"该餐厅所在的具体城市(如 广州/顺德/珠海/澳门等)","reason":"推荐理由","cuisine":"菜系类型","complaints":"避雷点/口味吐槽","highlights":"必点菜/赞点"}}]}}"""
 
         try:
+            _report("research", "Step 2/9: AI正在研读笔记并提取 POI... 🧠", 18)
             result = call_deepseek("提取POI。返回纯JSON。", extract_prompt, temperature=0.1, max_tokens=3000)
             if isinstance(result, dict):
                 xhs_pois["sights"] = result.get("sights", [])

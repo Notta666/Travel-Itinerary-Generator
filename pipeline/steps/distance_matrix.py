@@ -18,7 +18,8 @@ def step_5_distance_matrix(context):
     if len(pois) < 2:
         print("  ⚠️ POI不足, 跳过")
         return context
-    tuples = [(p["name"], p["location"][0], p["location"][1]) for p in pois]
+    # 位置未解析的 POI（location 为 None）跳过，避免 TypeError，也不参与距离计算
+    tuples = [(p["name"], p["location"][0], p["location"][1]) for p in pois if p.get("location")]
     if hasattr(amap, 'distance_matrix_parallel'):
         matrix = amap.distance_matrix_parallel(tuples, max_workers=4)
     else:

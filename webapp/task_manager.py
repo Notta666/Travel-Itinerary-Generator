@@ -18,6 +18,17 @@ class CancelledError(Exception):
     pass
 
 
+_task_start_times = {}
+
+def _cleanup_stale_tasks():
+    import time
+    now = time.time()
+    with _cancel_lock:
+        for tid in list(_cancel_flags.keys()):
+            if now - _task_start_times.get(tid, now) > 1800:
+                _cancel_flags.pop(tid, None)
+                _task_start_times.pop(tid, None)
+
 def _is_cancelled(task_id):
     """Check if a cancel has been requested for this task."""
     with _cancel_lock:
@@ -27,6 +38,7 @@ def _is_cancelled(task_id):
 
 async def cancel_task(task_id: str):
     """Cancel a running task."""
+    _cleanup_stale_tasks()
     task = get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
@@ -43,7 +55,7 @@ async def cancel_task(task_id: str):
             return {"status": "cancelled"}
 
 
-def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budget=None, hotel_budget_min=300, hotel_budget_max=500):
+def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budget=None, hotel_budget_min=300, hotel_budget_max=500, user_prefs=None, days=None, opencli_ok=True):
     """Run the pipeline in a background thread with SSE progress."""
     try:
         from pipeline.run_pipeline import _parse_goal, run_pipeline
@@ -53,6 +65,8 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
         with _cancel_lock:
             cancel_evt = threading.Event()
             _cancel_flags[task_id] = cancel_evt
+            import time
+            _task_start_times[task_id] = time.time()
 
         def _progress(step, msg, pct):
             # Check cancellation before reporting progress
@@ -71,7 +85,10 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
             _update_task(task_id, progress=json.dumps(prog, ensure_ascii=False))
 
         # Parse goal
-        city, days, pois, prefs = _parse_goal(goal_text)
+        parsed_city, parsed_days, pois, prefs = _parse_goal(goal_text)
+
+        city = parsed_city
+        final_days = int(days) if days is not None and str(days).isdigit() and int(days) > 0 else parsed_days
 
         # Override with Web UI user inputs
         ui_people = people if people is not None else 2
@@ -79,7 +96,7 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
         if budget is not None:
             ui_budget_str = f"共{budget}元"
         else:
-            total_est = 1500 * ui_people * max(days or 2, 1)
+            total_est = 1500 * ui_people * max(final_days or 2, 1)
             ui_budget_str = f"共{total_est}元"
 
         prefs["people_count"] = ui_people
@@ -88,18 +105,24 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
         # 酒店每晚预算区间（默认300~500）
         prefs["hotel_budget_min"] = hotel_budget_min
         prefs["hotel_budget_max"] = hotel_budget_max
+        # 数据来源标注：小红书可用则走真实调研，否则内置推荐库（用于产物标注）
+        prefs["research_source"] = "xiaohongshu" if opencli_ok else "default_pois"
 
-        # Set customized step list
-        if enabled_steps is not None:
+        # 用户偏好（复选框选择）
+        if user_prefs:
+            prefs["user_prefs"] = user_prefs
+
+        # Set customized step list if valid list/set
+        if enabled_steps is not None and isinstance(enabled_steps, (list, tuple, set)):
             prefs["enabled_steps"] = enabled_steps
 
         # Run pipeline with progress_callback
-        context = run_pipeline(city, days, manual_pois=pois, prefs=prefs, progress_callback=_progress, cancel_event=cancel_evt)
+        context = run_pipeline(city, final_days, manual_pois=pois, prefs=prefs, progress_callback=_progress, cancel_event=cancel_evt)
 
         # Collect results
         result = {
             "city": city,
-            "days": days,
+            "days": final_days,
             "brochure": None,
             "report": None,
         }
@@ -125,6 +148,6 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
         _update_task(task_id, status="failed", error=str(e),
                      traceback=traceback.format_exc())
     finally:
-        # Clean up cancel flag
         with _cancel_lock:
             _cancel_flags.pop(task_id, None)
+            _task_start_times.pop(task_id, None)

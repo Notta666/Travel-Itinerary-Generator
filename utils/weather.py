@@ -168,22 +168,13 @@ def get_weather_for_dates(city="上海", start_date=None, days=2):
     except Exception as e:
         print(f"  ⚠️ 获取历史天气API异常: {e}，将降级到静态历史天气")
         
-    # 终极降级方案：返回默认静态数据以防报错
+    # 终极降级：真实天气源全部失败，诚实标注缺失，绝不编造数据（数据诚信铁律）
     return {
-        "success": True, "type": "historical",
-        "city": city, "note": "参考往年同期数据(静态降级)",
-        "forecast": [
-            {"date": (start_date + _dt.timedelta(days=i)).strftime("%Y-%m-%d"),
-             "day_weather": "晴转多云" if i == 0 else "多云",
-             "night_weather": "多云",
-             "temp_range": "25~34°C"}
-            for i in range(days)
-        ],
-        "suggestions": [
-            "🧴 夏季出行紫外线强，建议做好防晒",
-            "🧥 室内空调温度低，建议带件薄外套备用",
-            "💧 天气炎热请注意补水"
-        ]
+        "success": False, "type": "unavailable",
+        "city": city,
+        "note": "天气数据获取失败（高德接口异常或网络受限），暂无法提供准确预报",
+        "forecast": [],
+        "suggestions": []
     }
 
 

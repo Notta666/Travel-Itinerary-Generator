@@ -1,193 +1,472 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>FLYAI · AI Travel Engine</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>TripGenius · AI 旅行攻略生成器</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="/static/style.css?v=3.5.6">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@700;900&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============ 设计令牌：浅/深无缝 · 毛玻璃 · 旅行 App ============ */
+:root{
+  --bg-1:#eaf1f8; --bg-2:#dde9f3; --bg-3:#eaf6f1;
+  --text:#15233b; --muted:#5d6e86;
+  --surface:rgba(255,255,255,0.55);
+  --surface-2:rgba(255,255,255,0.78);
+  --surface-solid:#ffffff;
+  --border:rgba(21,35,59,0.10);
+  --border-strong:rgba(21,35,59,0.16);
+  --accent:#0E9F8E;            /* 青绿主色（受控饱和度，非紫蓝） */
+  --accent-2:#E08A3C;          /* 暖琥珀 */
+  --accent-soft:rgba(14,159,142,0.12);
+  --warn:#C2680E;
+  --warn-soft:rgba(194,104,14,0.14);
+  --ok:#0E9F8E;
+  --err:#C0392B;
+  --shadow:0 12px 40px rgba(15,30,55,0.10);
+  --shadow-sm:0 6px 18px rgba(15,30,55,0.08);
+  --radius:22px; --radius-sm:14px;
+  --maxw:1040px;
+  --font-sans:'Inter','Noto Sans SC',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  --font-disp:'Sora','Noto Serif SC',serif;
+}
+html.dark{
+  --bg-1:#0a1019; --bg-2:#0d1626; --bg-3:#0a1a1a;
+  --text:#e7eef8; --muted:#93a5be;
+  --surface:rgba(255,255,255,0.06);
+  --surface-2:rgba(255,255,255,0.10);
+  --surface-solid:#121b2b;
+  --border:rgba(255,255,255,0.12);
+  --border-strong:rgba(255,255,255,0.20);
+  --accent:#2DD4BF; --accent-2:#FBBF24;
+  --accent-soft:rgba(45,212,191,0.14);
+  --warn:#F59E0B; --warn-soft:rgba(245,158,11,0.16);
+  --shadow:0 14px 44px rgba(0,0,0,0.5);
+  --shadow-sm:0 6px 18px rgba(0,0,0,0.4);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--font-sans); color:var(--text); background:var(--bg-1);
+  line-height:1.6; min-height:100vh; -webkit-font-smoothing:antialiased;
+  transition:background-color .4s ease,color .4s ease;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(60vw 60vw at 12% 8%, var(--bg-3), transparent 60%),
+    radial-gradient(55vw 55vw at 88% 12%, rgba(224,138,60,0.10), transparent 60%),
+    radial-gradient(70vw 70vw at 50% 100%, var(--bg-2), transparent 65%),
+    linear-gradient(160deg,var(--bg-1),var(--bg-2));
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(16px,4vw,40px) 64px;}
+
+/* 顶栏 */
+.topbar{
+  position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:14px clamp(16px,4vw,40px);background:var(--surface);
+  backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:1.05rem;}
+.brand .dot{width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 0 4px var(--accent-soft);}
+.theme-btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);font-size:.8rem;font-weight:600;transition:.2s;}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* Hero */
+.hero{padding:clamp(34px,6vw,60px) 0 22px;}
+.hero h1{font-family:var(--font-disp);font-weight:800;line-height:1.02;letter-spacing:-.03em;
+  font-size:clamp(2.2rem,6vw,3.6rem);margin:0 0 12px;}
+.hero p{margin:0;color:var(--muted);font-size:clamp(.95rem,2vw,1.1rem);font-weight:600;max-width:620px;}
+
+/* 卡片（毛玻璃） */
+.card{
+  background:var(--surface);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:clamp(20px,3.4vw,34px);margin-bottom:22px;
+}
+.card h2{font-family:var(--font-disp);font-weight:800;font-size:1.3rem;margin:0 0 18px;display:flex;align-items:center;gap:10px;}
+.card h2 .bar{width:6px;height:22px;border-radius:6px;background:linear-gradient(180deg,var(--accent),var(--accent-2));}
+
+label.fld{display:block;font-weight:700;font-size:.85rem;margin:0 0 8px;color:var(--text);}
+textarea,input,select{
+  width:100%;font-family:var(--font-sans);font-size:.95rem;color:var(--text);
+  background:var(--surface-solid);border:1px solid var(--border-strong);border-radius:var(--radius-sm);
+  padding:12px 14px;outline:none;transition:.2s;
+}
+textarea{min-height:96px;resize:vertical;line-height:1.5;}
+textarea:focus,input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);}
+::placeholder{color:var(--muted);opacity:.8;}
+
+/* 灵感 chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 20px;}
+.chip{cursor:pointer;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);
+  font-size:.82rem;font-weight:600;padding:7px 13px;border-radius:999px;transition:.2s;}
+.chip:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
+.chip:active{transform:translateY(0);}
+
+/* 参数网格（自适应，非三等卡） */
+.params{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px;}
+
+/* 选项开关 */
+.opts{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+.opt{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
+  padding:9px 15px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface-2);
+  font-size:.85rem;font-weight:700;transition:.2s;}
+.opt .sw{width:36px;height:20px;border-radius:999px;background:var(--border-strong);position:relative;transition:.2s;flex-shrink:0;}
+.opt .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+.opt.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);}
+.opt.on .sw{background:var(--accent);}
+.opt.on .sw::after{left:18px;}
+
+/* 提示条 */
+.hint{display:flex;align-items:center;gap:10px;font-size:.85rem;font-weight:600;padding:11px 15px;border-radius:var(--radius-sm);margin-bottom:18px;}
+.hint.warn{color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn);}
+.hint.ok{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);}
+.hint.info{color:var(--muted);background:var(--surface-2);border:1px solid var(--border);}
+
+/* 主按钮（非纯黑，青绿渐变） */
+.btn-primary{
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;
+  width:100%;padding:15px 22px;border:none;border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;
+  font-family:var(--font-disp);font-weight:800;font-size:1.05rem;letter-spacing:.01em;
+  box-shadow:0 10px 26px rgba(14,159,142,.28);transition:.22s;
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(14,159,142,.38);}
+.btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none;}
+
+/* 进度区 */
+.bar{height:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;overflow:hidden;margin-bottom:14px;}
+.bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:999px;transition:width .5s ease;}
+.live-msg{font-weight:600;color:var(--text);min-height:1.4em;margin-bottom:18px;font-size:.95rem;}
+
+/* 纵向时间线 */
+.timeline{list-style:none;margin:0;padding:0 0 0 6px;}
+.tl-item{position:relative;display:flex;gap:14px;padding:10px 0;align-items:flex-start;}
+.tl-item::before{content:"";position:absolute;left:13px;top:30px;bottom:-2px;width:2px;background:var(--border);}
+.tl-item:last-child::before{display:none;}
+.tl-dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--surface-2);border:1px solid var(--border-strong);font-size:.95rem;transition:.25s;z-index:1;}
+.tl-body{flex:1;padding-top:2px;}
+.tl-label{font-weight:700;font-size:.95rem;color:var(--muted);transition:.2s;}
+.tl-sub{font-size:.8rem;color:var(--muted);font-weight:600;margin-top:2px;min-height:1em;}
+.tl-item.active .tl-dot{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;
+  box-shadow:0 0 0 5px var(--accent-soft);}
+.tl-item.active .tl-label{color:var(--text);}
+.tl-item.done .tl-dot{background:var(--accent);border-color:transparent;color:#fff;}
+.tl-item.done .tl-label{color:var(--text);}
+.tl-item.done .tl-dot .ic{filter:none;}
+
+.row-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+.btn-ghost{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:11px 18px;border-radius:var(--radius-sm);
+  border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);font-weight:700;font-size:.9rem;transition:.2s;}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-ghost.danger:hover{border-color:var(--err);color:var(--err);}
+
+/* 结果区 */
+.result-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.result-head .rtitle{font-family:var(--font-disp);font-weight:800;font-size:1.2rem;}
+#brochureFrame{width:100%;height:78vh;min-height:520px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-solid);}
+.err-box{padding:24px;border-radius:var(--radius-sm);background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);font-weight:700;}
+
+[hidden]{display:none!important;}
+
+footer{margin-top:20px;padding:22px 0;border-top:1px solid var(--border);text-align:center;font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.03em;}
+@media(max-width:520px){.hero{padding-top:26px;}.params{grid-template-columns:1fr 1fr;}}
+</style>
 </head>
 <body>
 
-<div class="wrapper">
-  <!-- Header -->
-  <div class="header animate-enter">
-    <div class="badges">
-      <span class="badge">🤖 AI 智能规划</span>
-      <span class="badge highlight">📸 小红书避雷</span>
-      <span class="badge">🗺️ 交互地图</span>
-      <span class="badge flyai">✈️ 飞猪实时价</span>
-    </div>
-    <div class="title-tag">FlyAI · Smart Trip Planner</div>
-    <div class="title-main">随心游 <span>AI 旅行攻略</span></div>
-    <div class="title-sub">一句话说出你的旅行想法，剩下的交给极光引擎</div>
-  </div>
-
-  <!-- Input Glass -->
-  <div class="input-glass animate-enter delay-1">
-    <div class="mockup-header">
-      <div class="mockup-dots">
-        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-      </div>
-      <span class="mockup-label">FLYAI PROMPT</span>
-    </div>
-    <div class="input-row">
-      <input id="goalInput" type="text" placeholder="输入目的地，例如「安吉周末自驾漂流」" onkeydown="if(event.key==='Enter')generate()">
-      <button id="genBtn" onclick="generate()">✨ 极速规划</button>
-    </div>
-
-    <!-- Params Area -->
-    <div class="params-area">
-      <div class="params-row">
-        <div class="param-item">
-          <label for="peopleInput">👥 人数</label>
-          <input id="peopleInput" type="number" min="1" placeholder="默认 2 人">
-        </div>
-        <div class="param-item">
-          <label for="budgetInput">💰 总预算</label>
-          <input id="budgetInput" type="number" min="0" placeholder="如 5000（留空自动）">
-        </div>
-        <div class="param-item">
-          <label>🏨 住宿 /晚</label>
-          <div class="hotel-range">
-            <input id="hotelBudgetMin" type="number" min="0" value="300" placeholder="最低">
-            <span class="range-bar"></span>
-            <input id="hotelBudgetMax" type="number" min="0" value="500" placeholder="最高">
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Pipeline Customization -->
-    <div class="pipeline-customization">
-      <div class="custom-title" onclick="toggleCustomization()">
-        <span>⚙️ Pipeline 高级配置 (点击展开)</span>
-        <span id="toggleIcon">➕</span>
-      </div>
-      <div class="custom-options" id="customOptions" style="display: none;">
-        <label class="option-item">
-          <input type="checkbox" id="step_research" checked>
-          <div class="option-details">
-            <span class="option-name">小红书调研 📕</span>
-            <span class="option-desc">抓取网红打卡景点与推荐美食（需扩展支持）</span>
-          </div>
-        </label>
-        <label class="option-item">
-          <input type="checkbox" id="step_enrich" checked>
-          <div class="option-details">
-            <span class="option-name">POI 地址丰富 🏛️</span>
-            <span class="option-desc">反查高德详细地址及片区信息，验证坐标</span>
-          </div>
-        </label>
-        <label class="option-item">
-          <input type="checkbox" id="step_distance" checked>
-          <div class="option-details">
-            <span class="option-name">驾车距离矩阵 📏</span>
-            <span class="option-desc">计算两点间驾车距离与时间优化排序</span>
-          </div>
-        </label>
-        <label class="option-item">
-          <input type="checkbox" id="step_flyai" checked>
-          <div class="option-details">
-            <span class="option-name">飞猪实时物价 ✈️</span>
-            <span class="option-desc">查询机票/高铁/酒店实时价格与房态</span>
-          </div>
-        </label>
-        <label class="option-item">
-          <input type="checkbox" id="step_tips" checked>
-          <div class="option-details">
-            <span class="option-name">出行建议与天气 🌤️</span>
-            <span class="option-desc">获取打包清单、视觉穿衣指南及天气预测</span>
-          </div>
-        </label>
-      </div>
-    </div>
-  </div>
-
-  <!-- Examples -->
-  <div class="examples animate-enter delay-2" id="exampleTags">
-    <span onclick="fill(this.dataset.goal)" data-goal="安吉周末漂流自驾">🏔️ 安吉漂流</span>
-    <span onclick="fill(this.dataset.goal)" data-goal="杭州两天一夜带爸妈">👨‍👩‍👧 杭州亲子</span>
-    <span onclick="fill(this.dataset.goal)" data-goal="莫干山避暑自驾">🌲 莫干山避暑</span>
-    <span onclick="fill(this.dataset.goal)" data-goal="千岛湖三天度假">🏖️ 千岛湖度假</span>
-  </div>
-
-  <!-- Features Grid -->
-  <div class="grid animate-enter delay-3">
-    <div class="card"><div class="card-icon">📖</div><div class="card-title">精美手账攻略</div><div class="card-desc">自动配图生成高颜值卡片行程，打卡避雷一应俱全。</div></div>
-    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">随心交互地图</div><div class="card-desc">景点、餐厅、酒店分图层展示，按日清晰轨迹切换。</div></div>
-    <div class="card"><div class="card-icon">🍳</div><div class="card-title">双通道美食库</div><div class="card-desc">融合小红书与大模型调研，为您精挑细选地道美食。</div></div>
-    <div class="card"><div class="card-icon">✈️</div><div class="card-title">飞猪实时接入</div><div class="card-desc">机酒实时比价预订无缝衔接，让行程预算精准可控。</div></div>
-  </div>
-
-  <!-- Loading Template (cloned by ui.js on each generation) -->
-  <template id="loadingTemplate">
-    <div class="loader-container">
-      <div class="loader-ring"></div>
-      <div class="loader-core"></div>
-    </div>
-    <p class="loading-title">🚀 极光引擎运转中...</p>
-    <p class="hint" id="loadingHint">正在为您规划专属旅行攻略</p>
-    <div class="quote-container">
-      <span class="quote-text" id="quoteText">📕 正在翻阅小红书的宝藏笔记...</span>
-    </div>
-    <div id="stepProgress" style="margin:16px auto 0;max-width:340px;text-align:center;font-size:13px;color:var(--brand-secondary);font-weight:700;min-height:20px;"></div>
-    <div class="progress-bar"><div class="progress-bar-inner"></div></div>
-  </template>
-  <!-- Loading container (populated from template) -->
-  <div id="loading"></div>
-
-  <!-- Result Frame -->
-  <div id="result">
-    <div class="result-header">
-      <h2>🎉 您的专属攻略已就绪</h2>
-      <a id="downloadLink" href="#">⬇ 下载离线版</a>
-    </div>
-    <div id="brochureFrame">
-      <iframe id="brochureIframe"></iframe>
-    </div>
-  </div>
-
-  <!-- Guide Card -->
-  <div class="user-guide-card animate-enter delay-4">
-    <div class="guide-header" onclick="toggleGuide()">
-      <span>💡 FLYAI 引擎使用指南</span>
-      <span id="guideToggleIcon">➕</span>
-    </div>
-    <div class="guide-content" id="guideContent" style="display: none;">
-      <div class="guide-step">
-        <div class="step-num">1</div>
-        <div class="step-body">
-          <div class="step-title">输入您的旅行灵感</div>
-          <div class="step-desc">输入目的地及特殊要求，如"安吉周末漂流"、"带爸妈杭州两天"，极光引擎会自动解析时间与偏好。</div>
-        </div>
-      </div>
-      <div class="guide-step">
-        <div class="step-num">2</div>
-        <div class="step-body">
-          <div class="step-title">无感并行计算</div>
-          <div class="step-desc">引擎将同时调用 LLM、小红书爬虫、高德地图矩阵、飞猪 OpenAPI，数秒内完成百亿级的数据验证组合。</div>
-        </div>
-      </div>
-      <div class="guide-step">
-        <div class="step-num">3</div>
-        <div class="step-body">
-          <div class="step-title">查阅并分享</div>
-          <div class="step-desc">生成完毕后，您将看到具备实时交互地图的精美图文手账，不仅支持在线动态浏览，还可以一键下载随时阅读。</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div class="footer animate-enter delay-4">
-    <span class="brand">FLYAI Travel Engine</span>
-    <span>Powered by AI</span>
-    <span>v3.5.6</span>
-  </div>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> TripGenius<span style="color:var(--muted);font-weight:500;"> · 行程手册</span></div>
+  <button class="theme-btn" onclick="toggleT()" id="themeBtn">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <span id="themeTxt">深色</span>
+  </button>
 </div>
 
-<script type="module" src="/static/main.js?v=3.5.6"></script>
+<div class="wrap">
+
+  <section class="hero">
+    <h1>用一句话，生成专属旅行手册</h1>
+    <p>自然语言描述目的地与偏好 → 9 步 Pipeline（调研 · 编码 · 规划 · 报价）→ 单文件交互式图文手册，含实时地图与预算。</p>
+  </section>
+
+  <!-- 输入区 -->
+  <section class="card" id="composeCard">
+    <h2><span class="bar"></span>描述你的旅行</h2>
+
+    <label class="fld" for="goal">旅行目标</label>
+    <textarea id="goal" placeholder="例如：浙江周末自驾，2天，两人，想看山水也吃点好的"></textarea>
+
+    <div class="chips" id="inspChips">
+      <span class="chip">浙江周末自驾，2天，两人</span>
+      <span class="chip">成都美食探店，3天</span>
+      <span class="chip">北京亲子游，带小孩</span>
+      <span class="chip">大理洱海环线，4天自驾</span>
+      <span class="chip">上海周边古镇，1天</span>
+    </div>
+
+    <div class="params">
+      <div>
+        <label class="fld" for="days">行程天数</label>
+        <select id="days">
+          <option value="1">1 天</option>
+          <option value="2">2 天</option>
+          <option value="3" selected>3 天</option>
+          <option value="4">4 天</option>
+          <option value="5">5 天</option>
+          <option value="6">6 天</option>
+          <option value="7">7 天</option>
+        </select>
+      </div>
+      <div>
+        <label class="fld" for="people">出行人数</label>
+        <input id="people" type="number" min="1" max="20" value="2">
+      </div>
+      <div>
+        <label class="fld" for="budget">总预算（¥，可选）</label>
+        <input id="budget" type="number" min="0" step="100" placeholder="不填则不限制">
+      </div>
+      <div>
+        <label class="fld" for="startCity">出发城市（可选）</label>
+        <input id="startCity" type="text" placeholder="如：杭州">
+      </div>
+      <div>
+        <label class="fld" for="hmin">酒店预算下限（¥）</label>
+        <input id="hmin" type="number" min="0" step="50" value="300">
+      </div>
+      <div>
+        <label class="fld" for="hmax">酒店预算上限（¥）</label>
+        <input id="hmax" type="number" min="0" step="50" value="500">
+      </div>
+    </div>
+
+    <label class="fld">生成步骤（可选项，默认全开）</label>
+    <div class="opts" id="optToggles">
+      <span class="opt on" data-step="research"><span class="sw"></span>🔍 小红书调研</span>
+      <span class="opt on" data-step="enrich"><span class="sw"></span>🍽️ POI 丰富 + 美食</span>
+      <span class="opt on" data-step="distance"><span class="sw"></span>📏 距离优化</span>
+      <span class="opt on" data-step="flyai"><span class="sw"></span>💰 实时物价</span>
+      <span class="opt on" data-step="tips"><span class="sw"></span>📝 攻略建议</span>
+    </div>
+
+    <div id="xhsHint" class="hint info">正在检测小红书连接状态…</div>
+
+    <button class="btn-primary" id="genBtn">✨ 生成行程手册</button>
+  </section>
+
+  <!-- 进度区 -->
+  <section class="card" id="progressSection" hidden>
+    <h2><span class="bar"></span>生成进度</h2>
+    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+    <div class="live-msg" id="liveMsg">任务已提交，等待执行…</div>
+    <ol class="timeline" id="timeline"></ol>
+    <div class="row-actions">
+      <button class="btn-ghost danger" id="cancelBtn">⛔ 取消生成</button>
+    </div>
+  </section>
+
+  <!-- 结果区 -->
+  <section class="card" id="resultSection" hidden>
+    <div class="result-head">
+      <span class="rtitle">🎉 你的行程手册已生成</span>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-ghost" id="newBtn">🔄 新行程</button>
+        <button class="btn-ghost" id="dlBtn">⬇️ 下载 HTML</button>
+      </div>
+    </div>
+    <iframe id="brochureFrame" title="行程手册预览"></iframe>
+  </section>
+
+  <footer>Curated by TripGenius · 地理数据 © 高德地图 · 小红书为可选项（缺失时自动降级内置推荐库）</footer>
+</div>
+
+<script>
+/* ===== 步骤定义（与后端进度 step 字段一一对应） ===== */
+const STEPS = [
+  {key:'init',               label:'初始化',          icon:'🚀'},
+  {key:'research',           label:'小红书调研',      icon:'🔍'},
+  {key:'geocode',            label:'POI 地理编码',    icon:'🗺️'},
+  {key:'enrich',             label:'POI 丰富 + 美食', icon:'🍽️'},
+  {key:'distance',           label:'距离矩阵优化',    icon:'📏'},
+  {key:'transport_decision', label:'交通方式评估',    icon:'🚗'},
+  {key:'plan_itinerary',     label:'路线辩论规划',    icon:'✨'},
+  {key:'pricing',            label:'门票实时查询',    icon:'🎫'},
+  {key:'report',             label:'攻略报告生成',    icon:'📝'},
+  {key:'deliver',            label:'交付图文手册',    icon:'✅'},
+  {key:'done',               label:'全部完成',        icon:'🏁'},
+];
+const stepEls = {};
+
+/* ===== 主题切换（持久化） ===== */
+var themeTxt=document.getElementById('themeTxt');
+function applyTheme(isDark){
+  var h=document.documentElement;
+  if(isDark){h.classList.add('dark');h.classList.remove('light');themeTxt.textContent='浅色';}
+  else{h.classList.remove('dark');h.classList.add('light');themeTxt.textContent='深色';}
+}
+function toggleT(){applyTheme(!document.documentElement.classList.contains('dark'));try{localStorage.setItem('tg-theme',document.documentElement.classList.contains('dark')?'dark':'light');}catch(e){}}
+(function(){
+  var saved=null;try{saved=localStorage.getItem('tg-theme');}catch(e){}
+  var sysDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved? saved==='dark' : sysDark);
+})();
+
+/* ===== 渲染时间线骨架 ===== */
+(function buildTimeline(){
+  var tl=document.getElementById('timeline');
+  STEPS.forEach(function(s){
+    var li=document.createElement('li');
+    li.className='tl-item';
+    li.innerHTML='<div class="tl-dot"><span class="ic">'+s.icon+'</span></div>'+
+                 '<div class="tl-body"><div class="tl-label">'+s.label+'</div><div class="tl-sub" data-sub="'+s.key+'"></div></div>';
+    tl.appendChild(li);
+    stepEls[s.key]=li;
+  });
+})();
+
+/* ===== 灵感 chips ===== */
+document.getElementById('inspChips').addEventListener('click',function(e){
+  var c=e.target.closest('.chip');
+  if(!c)return;
+  document.getElementById('goal').value=c.textContent;
+  document.getElementById('goal').focus();
+});
+
+/* ===== 步骤开关 ===== */
+document.getElementById('optToggles').addEventListener('click',function(e){
+  var o=e.target.closest('.opt');
+  if(!o)return;
+  o.classList.toggle('on');
+});
+
+/* ===== 小红书状态检测（非阻塞提示） ===== */
+fetch('/api/check-opencli').then(function(r){return r.json();}).then(function(d){
+  var el=document.getElementById('xhsHint');
+  if(d.ok){
+    el.className='hint ok';
+    el.textContent='✅ 已连接小红书，将使用真实笔记辅助推荐';
+  }else{
+    el.className='hint warn';
+    el.textContent='⚠️ 未连接小红书（'+ (d.message||'未检测到登录态') +'），将自动降级为内置推荐库，不影响生成';
+  }
+}).catch(function(){
+  var el=document.getElementById('xhsHint');
+  el.className='hint info';
+  el.textContent='ℹ️ 小红书状态检测失败，将使用内置推荐库生成';
+});
+
+/* ===== 工具 ===== */
+function setBar(pct){document.getElementById('barFill').style.width=Math.max(0,Math.min(100,pct))+'%';}
+function markStep(step){
+  var idx=STEPS.findIndex(function(s){return s.key===step;});
+  if(idx<0)return; // 未知子步骤：仅更新文案
+  STEPS.forEach(function(s,i){
+    var el=stepEls[s.key];
+    el.classList.remove('active','done');
+    if(i<idx)el.classList.add('done');
+    else if(i===idx)el.classList.add('active');
+  });
+  if(step==='done'){STEPS.forEach(function(s){stepEls[s.key].classList.add('done');stepEls[s.key].classList.remove('active');});}
+}
+function setSub(step,msg){
+  var el=document.querySelector('[data-sub="'+step+'"]');
+  if(el)el.textContent=msg||'';
+}
+
+/* ===== 生成流程 ===== */
+var currentTaskId=null, es=null;
+function getSelectedSteps(){
+  var arr=[];
+  document.querySelectorAll('#optToggles .opt.on').forEach(function(o){arr.push(o.getAttribute('data-step'));});
+  return arr;
+}
+function resetProgress(){
+  setBar(0);
+  document.getElementById('liveMsg').textContent='任务已提交，等待执行…';
+  STEPS.forEach(function(s){stepEls[s.key].classList.remove('active','done');setSub(s.key,'');});
+}
+function startStream(taskId){
+  currentTaskId=taskId;
+  resetProgress();
+  document.getElementById('progressSection').hidden=false;
+  document.getElementById('resultSection').hidden=true;
+  document.getElementById('progressSection').scrollIntoView({behavior:'smooth',block:'start'});
+  if(es)es.close();
+  es=new EventSource('/stream/'+taskId);
+  es.onmessage=function(ev){
+    var d;try{d=JSON.parse(ev.data);}catch(e){return;}
+    if(d.pct!=null)setBar(d.pct);
+    if(d.message)document.getElementById('liveMsg').textContent=d.message;
+    if(d.step){markStep(d.step);setSub(d.step,d.message);}
+    if(d.done){
+      es.close();es=null;
+      if(d.failed){showError(d.error||'生成失败');}
+      else{showResult(taskId);}
+    }
+  };
+  es.onerror=function(){/* 连接关闭或中断，等待 done/failed */};
+}
+function showResult(taskId){
+  setBar(100);
+  document.getElementById('resultSection').hidden=false;
+  document.getElementById('brochureFrame').src='/result/'+taskId;
+  document.getElementById('dlBtn').onclick=function(){window.open('/download/'+taskId,'_blank');};
+  document.getElementById('resultSection').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function showError(msg){
+  var sec=document.getElementById('resultSection');
+  var frame=document.getElementById('brochureFrame');
+  if(frame && frame.tagName==='IFRAME'){
+    var esc=(msg||'未知错误').replace(/</g,'&lt;');
+    frame.srcdoc='<!DOCTYPE html><html><body style="margin:0;padding:40px;font-family:system-ui,-apple-system,sans-serif;color:#C0392B;font-weight:700;">❌ 生成失败：'+esc+'</body></html>';
+  }
+  sec.hidden=false;
+  sec.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+document.getElementById('genBtn').addEventListener('click',function(){
+  var goal=document.getElementById('goal').value.trim();
+  if(!goal){document.getElementById('goal').focus();document.getElementById('liveMsg').textContent='请先描述你的旅行目标';return;}
+  var btn=this;btn.disabled=true;btn.textContent='⏳ 生成中…';
+  var payload={
+    goal:goal,
+    days:parseInt(document.getElementById('days').value,10)||null,
+    people:parseInt(document.getElementById('people').value,10)||null,
+    budget:document.getElementById('budget').value?parseInt(document.getElementById('budget').value,10):null,
+    hotel_budget_min:parseInt(document.getElementById('hmin').value,10)||300,
+    hotel_budget_max:parseInt(document.getElementById('hmax').value,10)||500,
+    prefs:{start_city:document.getElementById('startCity').value.trim()},
+    steps:getSelectedSteps()
+  };
+  fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+    .then(function(o){
+      btn.disabled=false;btn.textContent='✨ 生成行程手册';
+      if(!o.ok){alert((o.j&&o.j.detail)||'提交失败');return;}
+      startStream(o.j.task_id);
+    })
+    .catch(function(){btn.disabled=false;btn.textContent='✨ 生成行程手册';alert('网络错误，请重试');});
+});
+
+document.getElementById('cancelBtn').addEventListener('click',function(){
+  if(!currentTaskId)return;
+  fetch('/cancel/'+currentTaskId,{method:'POST'}).then(function(){
+    if(es)es.close();
+    document.getElementById('liveMsg').textContent='已发送取消请求';
+  });
+});
+
+document.getElementById('newBtn').addEventListener('click',function(){
+  document.getElementById('resultSection').hidden=true;
+  if(es)es.close();
+  document.getElementById('composeCard').scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('goal').focus();
+});
+</script>
 </body>
 </html>

@@ -36,6 +36,9 @@ data/custom_images/
 xiaohongshu-downloads/
 data/references/amap_poicode.zip
 data/references/amap_poicode/
+webapp/tasks.db
+webapp/archive/
+.workbuddy/
 
 # Dev & build artifacts
 refactor*.py

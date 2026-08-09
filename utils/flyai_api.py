@@ -385,7 +385,6 @@ class FlyAIApiClient:
                     "address": item.get("address", ""),
                     "decoration_time": item.get("decorationTime", ""),
                     "rooms": rooms,
-                    "jump_url": item.get("jumpUrl", ""),
                     "main_pic": item.get("mainPic", ""),
                     "jump_url": item.get("jumpUrl", "") or item.get("detailUrl", ""),
                 })

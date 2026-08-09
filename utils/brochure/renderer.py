@@ -39,6 +39,7 @@ def render_brochure(
     day_map_labels,
     map_items_json,
     all_hotels_json,
+    research_source,
     generated_ts,
 ):
     """
@@ -91,5 +92,6 @@ def render_brochure(
         day_map_labels=day_map_labels,
         map_items_json=map_items_json,
         all_hotels_json=all_hotels_json,
+        research_source=research_source,
         generated_ts=generated_ts,
     )
