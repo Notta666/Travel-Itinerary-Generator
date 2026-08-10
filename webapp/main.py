@@ -218,8 +218,8 @@ async def stream_progress(task_id: str, request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    # 监听地址可配置：默认仅本机（安全）；外部访问（局域网/隧道）时设 HOST=0.0.0.0
-    _host = os.environ.get("HOST", "127.0.0.1")
+    # 监听地址可配置：默认 0.0.0.0（允许公网/容器访问）
+    _host = os.environ.get("HOST", "0.0.0.0")
     print("🌍 AI旅行攻略 Web App 启动中...")
     print(f"   访问地址: http://localhost:8080  (host={_host})")
     print("   按 Ctrl+C 停止")
