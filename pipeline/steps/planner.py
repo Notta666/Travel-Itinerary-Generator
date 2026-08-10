@@ -23,9 +23,18 @@ def _safe_parse_fusion(raw):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        for fix in [text + '"}]\n}', text.rsplit(',', 1)[0] + '}]\n}']:
-            try: return json.loads(fix)
-            except: continue
+        fixes = [
+            text,
+            text + '"}]}',
+            text.rsplit(',', 1)[0] + '}]}',
+            text.rstrip().rstrip('},').rstrip(',') + '}]}',
+            text.rstrip() + '}',
+        ]
+        for fix in fixes:
+            try:
+                return json.loads(fix)
+            except Exception:
+                continue
     return {"days": [], "overall_note": "LLM 返回异常，降级到规则引擎", "food_highlights": []}
 
 
@@ -245,8 +254,11 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         # Bear返回0天时重试一次
         if isinstance(bear_result, dict) and len(bear_result.get('days',[]) or []) == 0:
             print("  ⚠️ Bear返回0天，重试一次...")
-            bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=6000)
-            bear_result = bear_retry if isinstance(bear_retry, dict) else bear_result
+            try:
+                bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=6000)
+                bear_result = bear_retry if isinstance(bear_retry, dict) else bear_result
+            except Exception as e:
+                print(f"  ⚠️ Bear 重试失败: {e}")
         print(f"  📋 方案A → {len(bull_result.get('days',[]) or [])} 天 | 方案B → {len(bear_result.get('days',[]) or [])} 天")
 
         # ---- Fusion Prompt (压缩Bull/Bear摘要) ----
@@ -321,21 +333,25 @@ Bear悠闲避雷方案摘要: {bear_summary}
             day_pois = pois[start_idx:end_idx]
 
             for idx, p in enumerate(day_pois):
+                start_h = min(9 + idx * 3, 20)
+                end_h = min(start_h + 2, 21)
                 # 添加景点
                 day_slots.append({
                     "type": "sight",
                     "name": p["name"],
-                    "time_slot": f"{9 + idx * 3:02d}:00-{11 + idx * 3:02d}:00",
+                    "time_slot": f"{start_h:02d}:00-{end_h:02d}:00",
                     "transit": "步行或打车" if idx > 0 else "出发",
                     "note": "经典游览地标"
                 })
                 # 添加就近餐厅（如果有的话）
                 if p.get("nearby_food"):
                     f = p["nearby_food"][0]
+                    start2 = min(12 + idx * 5, 20)
+                    end2 = min(start2 + 1, 21)
                     day_slots.append({
                         "type": "food",
                         "name": f["name"],
-                        "time_slot": f"{12 + idx * 5:02d}:00-{13 + idx * 5:02d}:00",
+                        "time_slot": f"{start2:02d}:00-{end2:02d}:00",
                         "cuisine": f.get("tag", "特色美食"),
                         "cost": f.get("cost", "不限"),
                         "rating": f.get("rating", "4.0"),
@@ -373,10 +389,10 @@ Bear悠闲避雷方案摘要: {bear_summary}
                     food_coord_map[nf.get("name", "")] = [float(lng), float(lat)]
 
     # 城市中心坐标（用于验证合理性，支持多城）
-    cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
+    cities_list = [c.strip() for c in re.split(r"[+,，]", city) if c.strip()]
     city_centers = []
     for c in cities_list:
-        c_coord = amap.geocode(c)
+        c_coord = amap.geocode(c) if amap else None
         if c_coord:
             city_centers.append(list(c_coord))
     if not city_centers:
@@ -392,8 +408,11 @@ Bear悠闲避雷方案摘要: {bear_summary}
         day_sight_coords = []
         for s in d.get("slots", []):
             if s.get("type", "sight") != "food":
+                s_name = s.get("name", "").strip()
+                if not s_name:
+                    continue
                 for ep in pois:
-                    if ep["name"] == s["name"] and ep.get("location"):
+                    if ep.get("name") == s_name and ep.get("location"):
                         day_sight_coords.append(ep["location"])
                         break
         # 数据诚信：优先用当天已解析景点的真实坐标做就近回退；无可用真实坐标时回退为 None（不伪造）
@@ -401,7 +420,10 @@ Bear悠闲避雷方案摘要: {bear_summary}
 
         for s in d.get("slots", []):
             s_type = s.get("type", "sight")
-            name = s["name"]
+            name = s.get("name", "").strip()
+            if not name:
+                print(f"  ⚠️ 跳过缺 name 的 slot: {s}")
+                continue
             slot_city = s.get("city", "").strip()
 
             norm_name = _normalize_name(name)

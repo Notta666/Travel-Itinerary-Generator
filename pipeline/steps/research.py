@@ -10,6 +10,9 @@ logger = logging.getLogger("travel_pipeline")
 
 def step_2_research(context, xhs=None, progress_callback=None):
     """小红书搜索 → 精读笔记 → LLM提取景点+美食"""
+    if xhs is None:
+        from utils.research import XiaoHongShu
+        xhs = XiaoHongShu()
     _report = lambda step, msg, pct: progress_callback and progress_callback(step, msg, pct)
     _report("research", "Step 2/9: 小红书调研 🔍（景点+美食双通道）", 15)
 

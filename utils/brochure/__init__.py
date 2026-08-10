@@ -25,15 +25,7 @@ def _get_single_city(name, overall_city):
     for c in cities:
         if c in name:
             return c
-    if any(k in name for k in ["大三巴", "威尼斯人", "葡", "马介休", "玛嘉烈", "安东尼奥", "蛋挞"]):
-        return "澳门"
-    if any(k in name for k in ["清晖", "逢简", "顺德", "双皮奶", "大良", "猪肉婆"]):
-        return "佛山"
-    if any(k in name for k in ["渔女", "情侣", "日月贝", "新海利", "金悦轩", "横琴"]):
-        return "珠海"
-    if any(k in name for k in ["广州塔", "陈家祠", "炳胜", "点都德", "沙面", "陶陶居"]):
-        return "广州"
-    return cities[0]
+    return cities[0] if cities else "上海"
 
 
 def _fetch_photos(name, city="上海", category=""):
@@ -94,16 +86,17 @@ def _fetch_photos_batch(poi_items, default_city="上海", max_workers=4):
 def _search_hotels(location, city="上海", radius=1500):
     """高德搜索附近酒店(types=100000)，带限流与城市越界过滤"""
     global _last_fetch_time
-    elapsed = time.time() - _last_fetch_time
-    if elapsed < 0.2:
-        time.sleep(0.2 - elapsed)
+    with _fetch_lock:
+        now = time.time()
+        if now - _last_fetch_time < 1.0:
+            return []
+        _last_fetch_time = now
     try:
         loc = f"{location[0]},{location[1]}" if isinstance(location, (list,tuple)) else location
         url = f"https://restapi.amap.com/v5/place/around?key={AMAP_KEY}&location={loc}&radius={radius}&types=100000&sortrule=weight&page_size=10&show_fields=business,rating,cost,tel"
         req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-        _last_fetch_time = time.time()
         results = []
         for p in data.get("pois", []):
             name = p.get("name", "")
@@ -123,8 +116,8 @@ def _search_hotels(location, city="上海", radius=1500):
                 "distance": p.get("distance", 0),
             })
         return results[:5]
-    except Exception:
-        _last_fetch_time = time.time()
+    except Exception as e:
+        print(f"  ⚠️ 酒店查询异常: {e}")
         return []
 
 _POI_GRADIENTS = [
@@ -473,7 +466,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
     budget_html = ""
     if budget:
         days_n = len(itinerary) if itinerary else 2
-        daily = 1500
+        daily = None
         nums = re.findall(r'\d+', budget.replace(',', ''))
         if nums:
             budget_vals = [int(n) for n in nums if int(n) >= 100]
@@ -499,14 +492,15 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                         daily = val // max(days_n, 1)
                     else:
                         daily = val // (max(specified_people, 1) * max(days_n, 1))
-        daily = max(daily, 1)
-        total_budget = daily * days_n * people_count
-        accommodation_est = int(daily * 0.25)
-        food_est = int(daily * 0.18)
-        transport_est = int(daily * 0.12)
-        ticket_est = int(daily * 0.25)
-        shopping_est = daily - accommodation_est - food_est - transport_est - ticket_est
-        budget_html = f"""
+
+        if daily is not None and daily > 0:
+            total_budget = daily * days_n * people_count
+            accommodation_est = int(daily * 0.25)
+            food_est = int(daily * 0.18)
+            transport_est = int(daily * 0.12)
+            ticket_est = int(daily * 0.25)
+            shopping_est = daily - accommodation_est - food_est - transport_est - ticket_est
+            budget_html = f"""
     <div class="sec bs">
         <h2>💰 预算概览（{days_n}天 · {people_count}人 · 约¥{daily}/天/人）</h2>
         <div class="bg">
@@ -517,6 +511,12 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days_n*people_count}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
         </div>
         <div class="bt">预算合计 ≈ ¥{total_budget}（{transport or '出行方式'} · {people_count}人）</div>
+    </div>"""
+        else:
+            budget_html = f"""
+    <div class="sec bs">
+        <h2>💰 预算概览</h2>
+        <div class="note-box">暂无预算明细数据</div>
     </div>"""
 
     fh_html = ""
@@ -680,12 +680,18 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             hlist = hg["items"]
             hotel_items_html.append(f'<h3 style="font-size:14px; margin: 10px 0 5px; color: var(--text1);">📍 {c} 住宿备选</h3>')
             for i, _bh in enumerate(hlist):
+                _name = _bh.get("name", "酒店")
+                _price = _bh.get("price")
+                if isinstance(_price, (int, float)):
+                    _price_str = f"¥{_price:.0f}/晚"
+                elif _price:
+                    _price_str = f"¥{_price}/晚"
+                else:
+                    _price_str = "暂无报价"
                 _hbtn = f'<a class="btn-booking" href="{_bh.get("jump_url","")}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
                 tag = f'<span style="background:var(--primary);color:#fff;padding:2px 4px;border-radius:4px;font-size:10px;margin-right:6px;">推荐 {i+1}</span>'
-                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_bh.get("main_pic", "")}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_bh["name"]}</div><div class="bi-meta">¥{_bh["price"]:.0f}/晚 · {_bh.get("star", "星级")} · {hg.get("source", "飞猪实时")} · 开业/装修: {_bh.get("decoration_time", "未知")}</div></div><div class="bi-action">{_hbtn}</div></div>')
+                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_bh.get("main_pic", "")}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_esc(_name)}</div><div class="bi-meta">{_price_str} · {_bh.get("star", "星级")} · {hg.get("source", "飞猪实时")} · 开业/装修: {_bh.get("decoration_time", "未知")}</div></div><div class="bi-action">{_hbtn}</div></div>')
 
-        # 重置酒店区块（预订板块替换逐日卡片）；门票/门票HTML已在函数级初始化
-        hotel_html_parts = []
         # 覆盖 LLM 生成的酒店，替换为强化的备选列表
         if hotel_items_html:
             hotel_html_parts = [f"""

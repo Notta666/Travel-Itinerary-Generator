@@ -58,7 +58,19 @@ class FlyAIApiClient:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.ttls = {**self.DEFAULT_TTLS, **(ttls or {})}
         self._cli_available = None  # 懒检测
-        self.risk_blocked = False  # 标记是否已被风控封锁
+        self._risk_blocked_until = 0.0  # 标记风控封锁截止时间戳（30分钟自动解锁）
+
+    @property
+    def risk_blocked(self):
+        """标记是否已被风控封锁（带时间戳窗口）"""
+        return time.time() < getattr(self, "_risk_blocked_until", 0.0)
+
+    @risk_blocked.setter
+    def risk_blocked(self, value):
+        if value:
+            self._risk_blocked_until = time.time() + 1800
+        else:
+            self._risk_blocked_until = 0.0
 
     # ------------------------------------------------------------------
     # 环境检测
@@ -139,7 +151,7 @@ class FlyAIApiClient:
         Returns:
             dict|list|None: 解析后的 JSON 结果
         """
-        if getattr(self, "risk_blocked", False):
+        if time.time() < getattr(self, "_risk_blocked_until", 0.0):
             return None
         cmd = [self.CLI_BINARY] + args
         retries = 3
@@ -164,7 +176,7 @@ class FlyAIApiClient:
                             continue
                     elif "403" in stderr or "451" in stderr or "Abnormal access behavior" in stderr:
                         logger.warning(f"  ⚠️ FlyAI 接口触发平台风控限制，已自动切换为本地/高德数据源降级兜底。")
-                        self.risk_blocked = True
+                        self._risk_blocked_until = time.time() + 1800
                         return None
                     
                     stderr_snippet = stderr[:200]
@@ -178,11 +190,38 @@ class FlyAIApiClient:
                 # 清洗 ANSI 转义字符
                 clean = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", raw).strip()
 
-                # 正则提取首个 JSON 对象/数组（防 npm 日志/版本提示等杂质）
-                json_match = re.search(r"(\{.*\}|\[.*\])", clean, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group(1))
-                return json.loads(clean) if clean else None
+                if not clean:
+                    return None
+
+                # 先尝试全串 json.loads
+                try:
+                    return json.loads(clean)
+                except Exception:
+                    pass
+
+                # 提取 top-level JSON 候选逐个尝试
+                candidates = []
+                decoder = json.JSONDecoder()
+                for i, ch in enumerate(clean):
+                    if ch in ("{", "["):
+                        try:
+                            obj, end_idx = decoder.raw_decode(clean, i)
+                            candidates.append((i, end_idx, obj))
+                        except Exception:
+                            pass
+
+                # 过滤 nested 候选，仅保留顶级 (top-level) JSON 候选
+                top_candidates = []
+                for i, end_idx, obj in candidates:
+                    is_nested = any(c_start <= i and end_idx <= c_end for c_start, c_end, _ in candidates if (c_start, c_end) != (i, end_idx))
+                    if not is_nested:
+                        top_candidates.append(obj)
+
+                for c in reversed(top_candidates):
+                    if c is not None:
+                        return c
+
+                return None
 
             except subprocess.TimeoutExpired:
                 logger.error(f"FlyAI CLI 超时 (30s): {cmd[1]}")

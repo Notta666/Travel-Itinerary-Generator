@@ -26,8 +26,21 @@ from pipeline.steps.deliver import step_9_deliver
 from pipeline.multi_city_orchestrator import run_multi_city
 
 logger = logging.getLogger("travel_pipeline")
-amap = AMapClient()
-xhs = XiaoHongShu()
+
+_amap = None
+_xhs = None
+
+def get_amap():
+    global _amap
+    if _amap is None:
+        _amap = AMapClient()
+    return _amap
+
+def get_xhs():
+    global _xhs
+    if _xhs is None:
+        _xhs = XiaoHongShu()
+    return _xhs
 
 class PipelineStoppedError(Exception):
     pass
@@ -51,16 +64,17 @@ class StepTimer:
 def _print_timing_summary(timings):
     if not timings: return
     total = sum(t for _, t in timings)
-    print(f"\\n{'='*55}\\n⏱️  各步骤耗时汇总\\n{'='*55}")
+    print(f"\n{'='*55}\n⏱️  各步骤耗时汇总\n{'='*55}")
     for name, elapsed in timings:
         pct = elapsed / total * 100 if total > 0 else 0
         bar = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
         print(f"  {name:<23s} {elapsed:>6.1f}s {pct:>5.1f}%  {bar}")
-    print(f"{'='*55}\\n  总计: {total:>6.1f}s  100%\\n{'='*55}")
+    print(f"{'='*55}\n  总计: {total:>6.1f}s  100%\n{'='*55}")
 
 def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None, progress_callback=None, multi_cities=None, cancel_event=None):
     pipeline_t0 = time.time()
     timings = []
+    context = {}
     
     _report = lambda step, msg, pct: progress_callback and progress_callback(step, msg, pct)
 
@@ -89,9 +103,12 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                         f85 = ex.submit(step_85_tips, copy.deepcopy(context))
                         ctx8 = f8.result()
                         ctx85 = f85.result()
-                    context["report_path"] = ctx8.get("report_path")
-                    context["travel_tips"] = ctx85.get("travel_tips", {})
-                    context["weather"] = ctx85.get("weather", {})
+                    for key in ["itinerary", "report_path", "brochure_path", "overall_note",
+                                "food_highlights", "travel_tips", "weather", "error"]:
+                        if key in ctx8:
+                            context[key] = ctx8[key]
+                        if key in ctx85:
+                            context[key] = ctx85[key]
             else:
                 with StepTimer("Step 8 报告", timings):
                     context = step_8_generate_report(context)
@@ -108,9 +125,13 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                 context = step_9_deliver(context)
 
         except PipelineStoppedError as e:
-            print(f"\\n🛑 Pipeline 已停止: {e}\\n  已完成的步骤成果已保留。")
+            print(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
+        except Exception as e:
+            logger.exception("pipeline 异常终止: %s", e)
+            context["error"] = str(e)
+            return context
         finally:
-            print(f"\\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
+            print(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
             _print_timing_summary(timings)
         _report("done", "✅ 全部完成", 100)
         return context
@@ -120,7 +141,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
         start_city = prefs.get("start_city", "")
         if not start_city:
             print("🔍 检测到未指定出发地，正在获取您的实时位置...")
-            start_city = amap.get_ip_location()
+            start_city = get_amap().get_ip_location()
             if start_city:
                 print(f"📍 成功获取您的实时位置为起点: {start_city}")
             else:
@@ -139,7 +160,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
         _report("research", "Step 2/9: 小红书调研 🔍", 10)
         if "research" in enabled_steps:
             with StepTimer("Step 2 小红书调研", timings):
-                context = step_2_research(context, xhs=xhs, progress_callback=progress_callback)
+                context = step_2_research(context, xhs=get_xhs(), progress_callback=progress_callback)
         else:
             print("⏭️  跳过 Step 2 小红书调研 (用户配置禁用)")
             context.update({"research_notes": [], "note_contents": [], "xhs_pois": {"sights": [], "foods": []}, "xhs_sight_names": [], "xhs_food_data": []})
@@ -186,12 +207,12 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
         _check_stop(cancel_event, "Step 5.6")
         _report("transport_decision", "Step 5.6/9: 交通方式重评估 🚗✈️🚄", 48)
         with StepTimer("Step 5.6 交通决策", timings):
-            context = step_56_transport_decision(context, amap=amap)
+            context = step_56_transport_decision(context, amap=get_amap())
 
         _check_stop(cancel_event, "Step 6")
         _report("plan_itinerary", "多方案路线辩论规划 ✨", 50)
         with StepTimer("Step 6 路线辩论规划", timings):
-            context = step_6_plan_itinerary(context, amap=amap, progress_callback=progress_callback)
+            context = step_6_plan_itinerary(context, amap=get_amap(), progress_callback=progress_callback)
 
         _check_stop(cancel_event, "Step 7")
         _report("pricing", "Step 7/9: 景点门票查询 🎫", 55)
@@ -207,9 +228,12 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                     f85 = ex.submit(step_85_tips, copy.deepcopy(context))
                     ctx8 = f8.result()
                     ctx85 = f85.result()
-                context["report_path"] = ctx8.get("report_path")
-                context["travel_tips"] = ctx85.get("travel_tips", {})
-                context["weather"] = ctx85.get("weather", {})
+                for key in ["itinerary", "report_path", "brochure_path", "overall_note",
+                            "food_highlights", "travel_tips", "weather", "error"]:
+                    if key in ctx8:
+                        context[key] = ctx8[key]
+                    if key in ctx85:
+                        context[key] = ctx85[key]
         else:
             with StepTimer("Step 8 报告", timings):
                 context = step_8_generate_report(context)
@@ -222,9 +246,13 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
             context = step_9_deliver(context)
 
     except PipelineStoppedError as e:
-        print(f"\\n🛑 Pipeline 已停止: {e}\\n  已完成的步骤成果已保留。")
+        print(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
+    except Exception as e:
+        logger.exception("pipeline 异常终止: %s", e)
+        context["error"] = str(e)
+        return context
     finally:
-        print(f"\\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
+        print(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
         _print_timing_summary(timings)
 
     _report("done", "✅ 全部完成", 100)

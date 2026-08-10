@@ -18,9 +18,10 @@ DB_PATH = os.path.join(DATA_DIR, "tasks.db")
 # Default: localhost only. Set to "*" to allow all origins (development only)
 # Format: comma-separated list, e.g. "http://localhost:8080,http://127.0.0.1:8080"
 _CORS_ENV = os.environ.get("CORS_ORIGINS", "")
-if _CORS_ENV and _CORS_ENV != "*":
-    CORS_ORIGINS = [o.strip() for o in _CORS_ENV.split(",") if o.strip()]
-elif _CORS_ENV == "*":
+if _CORS_ENV == "*" and os.environ.get("CORS_ALLOW_ALL") == "1":
     CORS_ORIGINS = ["*"]
+elif _CORS_ENV and _CORS_ENV != "*":
+    CORS_ORIGINS = [o.strip() for o in _CORS_ENV.split(",") if o.strip()]
 else:
     CORS_ORIGINS = ["http://localhost:8080", "http://127.0.0.1:8080"]
+

@@ -17,6 +17,14 @@
 import urllib.request, urllib.parse, json, os, time, threading
 from utils.config import AMAP_KEY, BASE_DIR
 
+class AmapApiError(Exception):
+    """高德 API 业务错误（非 200 或 status=0）"""
+    pass
+
+class AmapQuotaError(Exception):
+    """高德 API 限流/配额超限错误"""
+    pass
+
 # ---- POI 类型码速查 ----
 def load_poi_types():
     """加载本地 POI 分类码表, 返回 {typecode: name}"""
@@ -71,11 +79,19 @@ def _request(url, timeout=10):
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "0":
-                info = data.get("info", "")
-                if "LIMIT" in info or "QPS" in info or "OVER_LIMIT" in info:
-                    time.sleep(1.5)
-                    continue
+                info = str(data.get("info", ""))
+                info_upper = info.upper()
+                if "LIMIT" in info_upper or "QPS" in info_upper or "OVER_LIMIT" in info_upper:
+                    if attempt < 2:
+                        time.sleep(1.5)
+                        continue
+                    else:
+                        raise AmapQuotaError(f"高德API限流: {info}")
+                else:
+                    raise AmapApiError(f"高德API错误: {info}")
             return data
+        except (AmapQuotaError, AmapApiError):
+            raise
         except Exception as e:
             if attempt == 2:
                 # 记录 warning 而不是使整个 pipeline 崩溃
@@ -138,7 +154,10 @@ class AMapClient:
             if city and "," not in city:
                 params["city"] = city
             url = _build_url("/v3/geocode/geo", key=self.key, **params)
-            data = _request(url)
+            try:
+                data = _request(url)
+            except Exception:
+                data = {}
             if data.get("status") == "1" and data.get("geocodes"):
                 g = data["geocodes"][0]
                 level = g.get("level", "")
@@ -204,9 +223,12 @@ class AMapClient:
             location = f"{location[0]},{location[1]}"
         params = {"location": location, "radius": radius, "extensions": extensions, "output": "JSON"}
         url = _build_url("/v3/geocode/regeo", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1":
-            return data.get("regeocode")
+        try:
+            data = _request(url)
+            if data.get("status") == "1":
+                return data.get("regeocode")
+        except Exception:
+            pass
         return None
 
     def place_text(self, keywords="", types="", region="", city_limit=False, page_size=10, page_num=1):
@@ -232,9 +254,12 @@ class AMapClient:
             if city_limit:
                 params["city_limit"] = "true"
         url = _build_url("/v5/place/text", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1":
-            return data.get("pois", [])
+        try:
+            data = _request(url)
+            if data.get("status") == "1":
+                return data.get("pois", [])
+        except Exception:
+            pass
         return []
 
     def place_around(self, location, radius=1000, types="", keywords="", sortrule="distance", page_size=10, show_fields=""):
@@ -260,9 +285,12 @@ class AMapClient:
         if show_fields:
             params["show_fields"] = show_fields
         url = _build_url("/v5/place/around", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1":
-            return data.get("pois", [])
+        try:
+            data = _request(url)
+            if data.get("status") == "1":
+                return data.get("pois", [])
+        except Exception:
+            pass
         return []
 
     def place_detail(self, poi_ids):
@@ -277,9 +305,12 @@ class AMapClient:
             poi_ids = "|".join(poi_ids)
         params = {"id": poi_ids, "output": "JSON"}
         url = _build_url("/v5/place/detail", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1":
-            return data.get("pois", [])
+        try:
+            data = _request(url)
+            if data.get("status") == "1":
+                return data.get("pois", [])
+        except Exception:
+            pass
         return []
 
     def direction_driving(self, origin, destination, strategy=0):
@@ -297,18 +328,21 @@ class AMapClient:
             destination = f"{destination[0]},{destination[1]}"
         params = {"origin": origin, "destination": destination, "strategy": strategy, "output": "JSON"}
         url = _build_url("/v3/direction/driving", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1" and data.get("route"):
-            route = data["route"]
-            if route.get("paths"):
-                p = route["paths"][0]
-                return {
-                    "distance": int(p.get("distance", 0)),
-                    "duration": int(p.get("duration", 0)),
-                    "tolls": float(p.get("tolls", 0)),
-                    "strategy": p.get("strategy", ""),
-                    "steps": p.get("steps", []),
-                }
+        try:
+            data = _request(url)
+            if data.get("status") == "1" and data.get("route"):
+                route = data["route"]
+                if route.get("paths"):
+                    p = route["paths"][0]
+                    return {
+                        "distance": int(p.get("distance", 0)),
+                        "duration": int(p.get("duration", 0)),
+                        "tolls": float(p.get("tolls", 0)),
+                        "strategy": p.get("strategy", ""),
+                        "steps": p.get("steps", []),
+                    }
+        except Exception:
+            pass
         return None
 
     def inputtips(self, keywords, city=""):
@@ -324,9 +358,12 @@ class AMapClient:
         if city:
             params["city"] = city
         url = _build_url("/v3/assistant/inputtips", key=self.key, **params)
-        data = _request(url)
-        if data.get("status") == "1":
-            return data.get("tips", [])
+        try:
+            data = _request(url)
+            if data.get("status") == "1":
+                return data.get("tips", [])
+        except Exception:
+            pass
         return []
 
     # ---- 高阶组合方法 ----

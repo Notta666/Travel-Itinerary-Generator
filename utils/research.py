@@ -137,6 +137,17 @@ def check_opencli_status():
         return False, f"OpenCLI 检查发生异常: {str(e)}", {"code": "EXCEPTION"}
 
 
+def _safe_jina_url(url):
+    """校验 Jina Reader 输入 URL 的合法性（必须为 http/https 且不含控制字符）"""
+    if not isinstance(url, str) or not url:
+        return None
+    if not re.match(r'^https?://', url, re.IGNORECASE):
+        return None
+    if any(ord(c) < 32 for c in url):
+        return None
+    return url
+
+
 class XiaoHongShu:
     """小红书搜索工具（OpenCLI 核心 + LLM 降级）"""
 
@@ -273,11 +284,15 @@ class XiaoHongShu:
 
     def read_note_content(self, note_url):
         """精读小红书笔记内容（OpenCLI 或 Jina Reader）"""
+        safe_url = _safe_jina_url(note_url)
+        if not safe_url:
+            return {"url": note_url, "content": "[读取失败: 无效的URL]"}
+
         # 优先通过 OpenCLI 获取
         if self.connected:
             try:
                 r = subprocess.run(
-                    [_OPENCLI, "xiaohongshu", "note", note_url, "-f", "json"],
+                    [_OPENCLI, "xiaohongshu", "note", safe_url, "-f", "json"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20
                 )
                 if r.returncode == 0 and r.stdout.strip():
@@ -288,13 +303,13 @@ class XiaoHongShu:
                             content_str = item.get("value", "")
                             break
                     if content_str:
-                        return {"url": note_url, "title": "", "content": content_str}
+                        return {"url": safe_url, "title": "", "content": content_str}
             except Exception:
                 pass # 失败则降级使用 Jina
 
         # Jina Reader 兜底抓取网页内容
         try:
-            url = "https://r.jina.ai/" + urllib.request.quote(note_url, safe='/:?=&')
+            url = "https://r.jina.ai/" + urllib.parse.quote(safe_url, safe='/:?=&')
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
@@ -303,9 +318,9 @@ class XiaoHongShu:
                 line for line in lines
                 if line.strip() and "cookie" not in line.lower() and len(line.strip()) > 10
             )
-            return {"url": note_url, "title": "", "content": content[:2000]}
+            return {"url": safe_url, "title": "", "content": content[:2000]}
         except Exception as e:
-            return {"url": note_url, "content": f"[读取失败: {e}]"}
+            return {"url": safe_url, "content": f"[读取失败: {e}]"}
 
     # ================================================================
     # LLM 仿真兜底
