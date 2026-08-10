@@ -14,11 +14,17 @@ OUTPUTS_DIR = os.path.join(PROJECT, "outputs")
 DATA_DIR = os.path.join(PROJECT, "data")
 DB_PATH = os.path.join(DATA_DIR, "tasks.db")
 
+# Ensure required directories exist
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+
 # CORS origins (environment configurable for security)
 # Default: localhost only. Set to "*" to allow all origins (development only)
 # Format: comma-separated list, e.g. "http://localhost:8080,http://127.0.0.1:8080"
 _CORS_ENV = os.environ.get("CORS_ORIGINS", "")
-if _CORS_ENV == "*" and os.environ.get("CORS_ALLOW_ALL") == "1":
+if _CORS_ENV == "*":
     CORS_ORIGINS = ["*"]
 elif _CORS_ENV and _CORS_ENV != "*":
     CORS_ORIGINS = [o.strip() for o in _CORS_ENV.split(",") if o.strip()]
