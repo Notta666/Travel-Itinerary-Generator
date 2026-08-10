@@ -185,8 +185,10 @@ async def stream_progress(task_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+    # 监听地址可配置：默认仅本机（安全）；外部访问（局域网/隧道）时设 HOST=0.0.0.0
+    _host = os.environ.get("HOST", "127.0.0.1")
     print("🌍 AI旅行攻略 Web App 启动中...")
-    print("   访问地址: http://localhost:8080")
+    print(f"   访问地址: http://localhost:8080  (host={_host})")
     print("   按 Ctrl+C 停止")
     print(f"   SQLite 数据库: {DB_PATH}")
-    uvicorn.run(app, host="127.0.0.1", port=8080, timeout_keep_alive=600)
+    uvicorn.run(app, host=_host, port=8080, timeout_keep_alive=600)
