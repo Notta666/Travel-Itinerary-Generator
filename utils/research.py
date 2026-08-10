@@ -57,6 +57,48 @@ def _find_opencli():
 _OPENCLI = _find_opencli()
 
 
+def _ensure_default_profile():
+    """OpenCLI 默认 profile 自愈：若默认 profile 未连接但存在已连接 profile，自动切换默认。
+
+    背景：Chrome 重启/换 profile 后，opencli 连接的 Browser Bridge profile 会变化，
+    但默认 profile 仍指向旧的已断开 profile，导致 xiaohongshu search 全部
+    BROWSER_CONNECT 失败（0 结果降级）。此函数在搜索前自动修复。
+    返回: (fixed: bool, detail: str)
+    """
+    opencli_path = _find_opencli()
+    if not opencli_path:
+        return False, "opencli not installed"
+    try:
+        r = subprocess.run(
+            [opencli_path, "profile", "list"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10
+        )
+        out = (r.stdout or "") + (r.stderr or "")
+        # 找到已连接 profile（含 default 标记）
+        connected = []
+        for line in out.splitlines():
+            line = line.strip()
+            if "— connected" in line or "- connected" in line:
+                name = line.split()[0].strip()
+                is_default = "default" in line
+                connected.append((name, is_default))
+        if not connected:
+            return False, "no connected profile"
+        # 默认已指向已连接 profile → 无需修复
+        for name, is_default in connected:
+            if is_default:
+                return False, f"default ok ({name})"
+        # 默认未连接 → 切换到第一个已连接 profile
+        target = connected[0][0]
+        subprocess.run(
+            [opencli_path, "profile", "use", target],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10
+        )
+        return True, f"auto-switched default to {target}"
+    except Exception as e:
+        return False, f"profile check error: {e}"
+
+
 def check_opencli_status():
     """
     检查 OpenCLI 是否安装，以及 Chrome 扩展是否连接、小红书账号是否已登录。
@@ -65,6 +107,11 @@ def check_opencli_status():
     opencli_path = _find_opencli()
     if not opencli_path:
         return False, "未在系统中检测到 OpenCLI 命令。请使用 npm 命令全局安装：npm install -g @jackwener/opencli", {"code": "NOT_INSTALLED"}
+
+    # 默认 profile 自愈：避免默认 profile 指向已断开连接导致搜索失败
+    fixed, detail = _ensure_default_profile()
+    if fixed:
+        print(f"  🔧 OpenCLI 默认 profile 自愈: {detail}")
 
     try:
         # 通过 opencli daemon status 进行毫秒级连通性检测
@@ -97,6 +144,10 @@ class XiaoHongShu:
         self.connected = bool(_OPENCLI)
         self._simulated_cache = {}
         if self.connected:
+            # 默认 profile 自愈：避免 Chrome 重启后默认 profile 指向已断开连接
+            fixed, detail = _ensure_default_profile()
+            if fixed:
+                print(f"  🔧 OpenCLI 默认 profile 自愈: {detail}")
             print("   ✅ 小红书引擎: OpenCLI (Chrome Extension)")
         else:
             print("   ⚠️ 小红书不可用：未找到 OpenCLI，将默认使用大模型仿真降级")
