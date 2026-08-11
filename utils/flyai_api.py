@@ -39,11 +39,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class FlyAIApiClient:
     """飞猪 FlyAI API 客户端封装"""
 
-    # 全局安装的 flyai CLI 路径
-    CLI_BINARY = os.path.join(
-        os.environ.get("USERPROFILE", os.environ.get("HOME", "")),
-        "AppData", "Roaming", "npm", "flyai.cmd"
-    )
+    # 跨平台查找 flyai CLI 路径
+    import shutil
+    CLI_BINARY = shutil.which("flyai") or "flyai"
 
     # 品类独立缓存 TTL（秒）
     DEFAULT_TTLS = {
