@@ -12,7 +12,7 @@ class TestPipelineRobustness(unittest.TestCase):
 
     def test_c1_lazy_loading(self):
         """C1: import run_pipeline 不应在模块加载阶段实例化 AMapClient 或 XiaoHongShu"""
-        with patch('utils.amap_api.AMapClient') as mock_amap, patch('utils.research.XiaoHongShu') as mock_xhs:
+        with patch('pipeline.run_pipeline.AMapClient') as mock_amap, patch('pipeline.run_pipeline.XiaoHongShu') as mock_xhs:
             import pipeline.run_pipeline as rp
             # Reset mocks in case they were instantiated earlier
             mock_amap.reset_mock()

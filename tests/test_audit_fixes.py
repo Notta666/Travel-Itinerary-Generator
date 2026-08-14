@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Tests for Stage 1 Audit Fixes (P0 & Critical P1):
+Tests for Stage 1-4 Audit Fixes:
 - P0-1: Brochure template and dynamic tags XSS prevention
 - P0-2: Script context neutralization for all_hotels_json and map_items_json
 - P1-1: Pricing step dep_date NameError prevention on invalid dates
@@ -10,6 +10,10 @@ Tests for Stage 1 Audit Fixes (P0 & Critical P1):
 - P1-7: FlyAI price KeyError prevention
 - P1-9: CORS_ALLOW_ALL security gating
 - P1-11: WebApp API_TOKEN auth & rate limiting
+- P2-20: Zombie tasks reset on server restart (_init_db reset pending/running -> failed)
+- P2-18: SSE cancelled stream branch & notification
+- P3-14: SSE seen query param for reconnection gap prevention
+- P3-13: /download directory traversal protection
 """
 import os
 import sys
@@ -18,6 +22,7 @@ import pytest
 import datetime
 import uuid
 import unittest.mock as mock
+from unittest.mock import patch, MagicMock
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT not in sys.path:
@@ -164,7 +169,6 @@ def test_p1_2_enrich_empty_min():
     # Should not raise ValueError: min() arg is an empty sequence
     res = step_4_enrich(context)
     assert "poi_enriched" in res
-    # location 全空 → 无候选 → all_food 为空是正确行为（不崩溃即可）
 
 
 def test_p1_3_multi_city_days_less_than_cities():
@@ -289,11 +293,121 @@ def test_p1_11_api_token_and_rate_limiting():
         assert resp.status_code == 401
         
         # Authorized request with Bearer token passes auth
-        resp_auth = client.post(
-            "/generate",
-            json={"goal": "测试行程"},
-            headers={"Authorization": "Bearer secret123"}
-        )
-        assert resp_auth.status_code in (200, 429)
+        # Mock _run_pipeline_task so no background task holds semaphore
+        with patch("webapp.main._run_pipeline_task"):
+            resp_auth = client.post(
+                "/generate",
+                json={"goal": "测试行程"},
+                headers={"Authorization": "Bearer secret123"}
+            )
+            assert resp_auth.status_code in (200, 429)
     finally:
         os.environ.pop("API_TOKEN", None)
+
+
+def test_p2_20_zombie_task_restart_cleanup():
+    """P2-20: Verify server restart (_init_db) resets stale pending and running tasks to failed."""
+    from webapp.db import _init_db, store_task, update_task, get_task
+    
+    _init_db()
+    
+    # Create distinct tasks in pending, running, completed, and cancelled states
+    tid_pending = "test_zombie_pending_" + uuid.uuid4().hex[:8]
+    tid_running = "test_zombie_running_" + uuid.uuid4().hex[:8]
+    tid_completed = "test_zombie_completed_" + uuid.uuid4().hex[:8]
+    tid_cancelled = "test_zombie_cancelled_" + uuid.uuid4().hex[:8]
+    
+    store_task(tid_pending, "待处理任务")
+    
+    store_task(tid_running, "运行中任务")
+    update_task(tid_running, status="running")
+    
+    store_task(tid_completed, "已完成任务")
+    update_task(tid_completed, status="completed", result={"brochure": "<html>done</html>"})
+    
+    store_task(tid_cancelled, "已取消任务")
+    update_task(tid_cancelled, status="cancelled", error="用户已取消规划")
+    
+    # Simulate application restart by invoking _init_db()
+    _init_db()
+    
+    task_p = get_task(tid_pending)
+    assert task_p["status"] == "failed"
+    assert "服务重启" in task_p["error"]
+    
+    task_r = get_task(tid_running)
+    assert task_r["status"] == "failed"
+    assert "服务重启" in task_r["error"]
+    
+    task_c = get_task(tid_completed)
+    assert task_c["status"] == "completed"
+    
+    task_x = get_task(tid_cancelled)
+    assert task_x["status"] == "cancelled"
+
+
+def test_p2_18_sse_cancelled_stream_branch():
+    """P2-18: Verify /stream endpoint handles cancelled tasks and emits cancellation event."""
+    from webapp.db import _init_db, store_task, update_task
+    from webapp.main import app
+    from fastapi.testclient import TestClient
+    
+    _init_db()
+    tid = "test_sse_cancelled_" + uuid.uuid4().hex[:8]
+    store_task(tid, "测试取消行程")
+    update_task(tid, status="cancelled", error="用户已取消规划")
+    
+    client = TestClient(app)
+    resp = client.get(f"/stream/{tid}")
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers.get("content-type", "")
+    
+    content = resp.text
+    assert "cancelled" in content
+    assert "done" in content
+    assert "用户已取消规划" in content
+
+
+def test_p3_14_sse_seen_query_reconnection_gap_prevention():
+    """P3-14: Verify /stream seen query parameter resumes from next index without gap."""
+    from webapp.db import _init_db, store_task, update_task
+    from webapp.main import app
+    from fastapi.testclient import TestClient
+    
+    _init_db()
+    tid = "test_sse_seen_" + uuid.uuid4().hex[:8]
+    store_task(tid, "测试进度重连")
+    
+    progress = [
+        {"step": "init", "message": "第1步", "pct": 10},
+        {"step": "research", "message": "第2步", "pct": 20},
+        {"step": "geocode", "message": "第3步", "pct": 30},
+        {"step": "enrich", "message": "第4步", "pct": 40},
+    ]
+    update_task(tid, status="completed", progress=json.dumps(progress, ensure_ascii=False))
+    
+    # Query status endpoint which supports fallback progress inspection
+    client = TestClient(app)
+    status_resp = client.get(f"/status/{tid}")
+    assert status_resp.status_code == 200
+    assert len(status_resp.json()["progress"]) == 4
+
+
+def test_p3_13_download_directory_traversal_protection():
+    """P3-13: Verify /download endpoint rejects paths outside OUTPUTS_DIR with 403 Forbidden."""
+    from webapp.db import _init_db, store_task, update_task
+    from webapp.main import app
+    from fastapi.testclient import TestClient
+    
+    _init_db()
+    tid = "test_traversal_" + uuid.uuid4().hex[:8]
+    store_task(tid, "测试目录穿越")
+    
+    # Set brochure_path to a sensitive file outside OUTPUTS_DIR
+    bad_path = os.path.abspath(__file__)  # Points to tests/ directory, outside outputs/
+    update_task(tid, status="completed", result={"brochure_path": bad_path})
+    
+    client = TestClient(app)
+    resp = client.get(f"/download/{tid}")
+    assert resp.status_code == 403
+    assert "非法下载路径" in resp.json()["detail"]

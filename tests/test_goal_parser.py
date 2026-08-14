@@ -63,23 +63,17 @@ class TestParseGoal(unittest.TestCase):
 
     @patch("utils.llm.call_deepseek")
     def test_llm_returns_empty_dict(self, mock_call):
-        """LLM returning empty dict uses defaults"""
+        """LLM returning empty dict now raises (P1-8: no silent Shanghai fallback)"""
         mock_call.return_value = {}
-        city, days, pois, prefs = _parse_goal("随便玩玩")
-        self.assertEqual(city, "上海")
-        self.assertEqual(days, 2)
-        self.assertEqual(pois, [])
-        # When LLM returns empty dict, _parse_goal falls back to defaults
-        # which returns empty prefs dict
-        self.assertIsInstance(prefs, dict)
+        with self.assertRaises(ValueError):
+            _parse_goal("随便玩玩")
 
     @patch("utils.llm.call_deepseek")
     def test_llm_raises_exception(self, mock_call):
-        """Exception from LLM uses default fallback"""
+        """Exception from LLM now propagates as ValueError (P1-8: no silent fallback)"""
         mock_call.side_effect = RuntimeError("API timeout")
-        city, days, pois, prefs = _parse_goal("北京三日游")
-        self.assertEqual(city, "上海")
-        self.assertEqual(days, 2)
+        with self.assertRaises(ValueError):
+            _parse_goal("北京三日游")
 
     @patch("utils.llm.call_deepseek")
     def test_goal_with_weekend(self, mock_call):
