@@ -334,9 +334,20 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 )
                 hloc = h.get("location", "")
                 if isinstance(hloc, str) and "," in hloc:
-                    hlng, hlat = hloc.split(",")
-                    all_items_flat.append({"name":h["name"],"loc":[float(hlng),float(hlat)],"type":"hotel","day":day_num,"time":"","hIdx":hi})
-                    all_hotels_data.append({"name":h["name"],"loc":[float(hlng),float(hlat)],"day":day_num,"idx":hi,"rating":rating_display,"cost":cost_display})
+                    try:
+                        parts = hloc.split(",", 1)
+                        hlng, hlat = float(parts[0]), float(parts[1])
+                        all_items_flat.append({"name":h["name"],"loc":[hlng,hlat],"type":"hotel","day":day_num,"time":"","hIdx":hi})
+                        all_hotels_data.append({"name":h["name"],"loc":[hlng,hlat],"day":day_num,"idx":hi,"rating":rating_display,"cost":cost_display})
+                    except (ValueError, TypeError, IndexError):
+                        pass
+                elif isinstance(hloc, (list, tuple)) and len(hloc) >= 2:
+                    try:
+                        hlng, hlat = float(hloc[0]), float(hloc[1])
+                        all_items_flat.append({"name":h["name"],"loc":[hlng,hlat],"type":"hotel","day":day_num,"time":"","hIdx":hi})
+                        all_hotels_data.append({"name":h["name"],"loc":[hlng,hlat],"day":day_num,"idx":hi,"rating":rating_display,"cost":cost_display})
+                    except (ValueError, TypeError, IndexError):
+                        pass
             hotel_html_parts.append(f'<div class="hs"><div class="ht">Day {day_num} 推荐住宿 <span class="ht-hint">点击选择 · 联动地图</span></div><div class="hw">{hc}</div></div>')
 
         def _tk(s):

@@ -6,8 +6,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from utils.amap_api import AMapClient
-amap = AMapClient()
 
 def step_55_flyai_pricing(context, client=None):
     """飞猪 FlyAI 实时机票/高铁/酒店价格查询（并行）
@@ -136,7 +134,7 @@ def step_55_flyai_pricing(context, client=None):
         results["hotel"] = {"items": [], "source": "error", "cheapest": None, "count": 0}
         print(f"  ⚠️ hotel 异常: {e}")
 
-    results["available"] = bool(results)
+    results["available"] = any(v.get("cheapest") for v in results.values() if isinstance(v, dict))
     context["flyai_prices"] = results
     n = sum(1 for v in results.values() if isinstance(v, dict) and v.get("cheapest"))
     print(f"  ✅ FlyAI 物价查询完成: {n} 品类有数据")

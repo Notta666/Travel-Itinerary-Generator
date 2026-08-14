@@ -78,7 +78,7 @@ class LLMClient:
         return self.PROVIDERS.get(self.provider, {}).get("default_model", "deepseek-chat")
 
     def call(self, system_prompt, user_prompt, temperature=0.3, max_tokens=4000,
-             max_retries=3, response_format=None, **kwargs):
+             max_retries=3, response_format=None, cancel_event=None, **kwargs):
         """Execute a generation call against the configured provider.
 
         Parameters
@@ -90,6 +90,8 @@ class LLMClient:
         max_retries : int
         response_format : dict or None
             e.g. {"type": "json_object"} for DeepSeek
+        cancel_event : threading.Event or None
+            Optional cancellation event
 
         Returns
         -------
@@ -98,10 +100,10 @@ class LLMClient:
         """
         if self.provider == "deepseek":
             return self._call_deepseek(system_prompt, user_prompt, temperature,
-                                       max_tokens, max_retries, response_format)
+                                       max_tokens, max_retries, response_format, cancel_event=cancel_event)
         elif self.provider == "openai":
             return self._call_openai(system_prompt, user_prompt, temperature,
-                                     max_tokens, max_retries, response_format, kwargs.get("images"))
+                                     max_tokens, max_retries, response_format, kwargs.get("images"), cancel_event=cancel_event)
         elif self.provider == "qwen":
             # Placeholder — not yet implemented
             raise NotImplementedError("Qwen backend not yet implemented")
@@ -111,7 +113,7 @@ class LLMClient:
     # ---- OpenAI implementation ----
 
     def _call_openai(self, system_prompt, user_prompt, temperature=0.3,
-                     max_tokens=4000, max_retries=3, response_format=None, images=None):
+                     max_tokens=4000, max_retries=3, response_format=None, images=None, cancel_event=None):
         """Direct OpenAI API call with retry logic and Vision support."""
         messages = [
             {"role": "system", "content": system_prompt}
@@ -145,6 +147,8 @@ class LLMClient:
         last_error = None
 
         for attempt in range(max_retries):
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("OpenAI API 调用被取消")
             try:
                 url = f"{self.base_url.rstrip('/')}/chat/completions" if self.base_url else "https://api.openai.com/v1/chat/completions"
                 req = urllib.request.Request(
@@ -156,7 +160,7 @@ class LLMClient:
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=90) as resp:
+                with urllib.request.urlopen(req, timeout=30) as resp:
                     result = json.loads(resp.read().decode("utf-8"))
                 content = result["choices"][0]["message"]["content"]
                 if response_format or req_body.get("response_format"):
@@ -174,19 +178,25 @@ class LLMClient:
                         f"OpenAI call failed (attempt {attempt+1}/{max_retries}): {e}, "
                         f"retrying in {wait}s"
                     )
-                    time.sleep(wait)
+                    t_end = time.time() + wait
+                    while time.time() < t_end:
+                        if cancel_event and cancel_event.is_set():
+                            raise InterruptedError("OpenAI API 调用被取消")
+                        time.sleep(0.1)
                 else:
                     logger.error(
                         f"OpenAI call failed (max retries {max_retries}): {e}"
                     )
                     raise RuntimeError(f"OpenAI API call failed: {e}") from e
+            except InterruptedError:
+                raise
             except Exception as e:
                 raise RuntimeError(f"OpenAI API call error: {e}") from e
 
     # ---- DeepSeek implementation ----
 
     def _call_deepseek(self, system_prompt, user_prompt, temperature=0.3,
-                       max_tokens=4000, max_retries=3, response_format=None):
+                       max_tokens=4000, max_retries=3, response_format=None, cancel_event=None):
         """Direct DeepSeek API call with retry logic."""
         req_body = {
             "model": self.model,
@@ -207,6 +217,8 @@ class LLMClient:
         last_error = None
 
         for attempt in range(max_retries):
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("DeepSeek API 调用被取消")
             try:
                 req = urllib.request.Request(
                     "https://api.deepseek.com/v1/chat/completions",
@@ -217,7 +229,7 @@ class LLMClient:
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=90) as resp:
+                with urllib.request.urlopen(req, timeout=30) as resp:
                     result = json.loads(resp.read().decode("utf-8"))
                 content = result["choices"][0]["message"]["content"]
                 return json.loads(content)
@@ -230,12 +242,18 @@ class LLMClient:
                         f"DeepSeek call failed (attempt {attempt+1}/{max_retries}): {e}, "
                         f"retrying in {wait}s"
                     )
-                    time.sleep(wait)
+                    t_end = time.time() + wait
+                    while time.time() < t_end:
+                        if cancel_event and cancel_event.is_set():
+                            raise InterruptedError("DeepSeek API 调用被取消")
+                        time.sleep(0.1)
                 else:
                     logger.error(
                         f"DeepSeek call failed (max retries {max_retries}): {e}"
                     )
                     raise RuntimeError(f"DeepSeek API call failed: {e}") from e
+            except InterruptedError:
+                raise
             except Exception as e:
                 raise RuntimeError(f"DeepSeek API call error: {e}") from e
 
@@ -245,10 +263,10 @@ class LLMClient:
 # ---------------------------------------------------------------------------
 
 def call_deepseek(system_prompt, user_prompt, temperature=0.3,
-                  max_tokens=4000, max_retries=3):
+                  max_tokens=4000, max_retries=3, cancel_event=None):
     """Legacy wrapper — equivalent to LLMClient(provider='deepseek').call(...)."""
     client = LLMClient(provider="deepseek")
-    return client.call(system_prompt, user_prompt, temperature, max_tokens, max_retries)
+    return client.call(system_prompt, user_prompt, temperature, max_tokens, max_retries, cancel_event=cancel_event)
 
 
 def call_llm(system_prompt, user_prompt, provider="deepseek", **kwargs):

@@ -124,18 +124,26 @@ def get_weather_for_dates(city="上海", start_date=None, days=2):
                 
                 for i in range(len(daily_data.get("time", []))):
                     d_str = (start_date + _dt.timedelta(days=i)).strftime("%Y-%m-%d")
-                    t_max = round(max_temps[i]) if i < len(max_temps) and max_temps[i] is not None else 30
-                    t_min = round(min_temps[i]) if i < len(min_temps) and min_temps[i] is not None else 22
-                    code = wmo_codes[i] if i < len(wmo_codes) and wmo_codes[i] is not None else 0
+                    t_max = round(max_temps[i]) if i < len(max_temps) and max_temps[i] is not None else None
+                    t_min = round(min_temps[i]) if i < len(min_temps) and min_temps[i] is not None else None
+                    code = wmo_codes[i] if i < len(wmo_codes) and wmo_codes[i] is not None else None
                     
                     # 匹配天气描述
-                    wx_desc = WMO_CODES.get(code, "多云" if code > 0 else "晴")
+                    wx_desc = WMO_CODES.get(code, "晴") if code is not None else "缺测"
+                    if t_min is not None and t_max is not None:
+                        temp_range = f"{t_min}~{t_max}°C"
+                    elif t_max is not None:
+                        temp_range = f"最高{t_max}°C"
+                    elif t_min is not None:
+                        temp_range = f"最低{t_min}°C"
+                    else:
+                        temp_range = "缺测"
                     
                     forecast_list.append({
                         "date": d_str,
                         "day_weather": wx_desc,
                         "night_weather": wx_desc,
-                        "temp_range": f"{t_min}~{t_max}°C"
+                        "temp_range": temp_range
                     })
                 
                 # 汇总建议
@@ -210,54 +218,80 @@ def get_weather(city="上海", extensions="all"):
 
     if extensions == "base" and data.get("lives"):
         live = data["lives"][0]
-        temp = float(live["temperature"])
-        weather = live["weather"]
+        try:
+            temp = float(live["temperature"])
+            temp_str = f"{temp}°C"
+        except (ValueError, TypeError, KeyError):
+            temp = None
+            temp_str = str(live.get("temperature", ""))
+            if temp_str and not temp_str.endswith("°C"):
+                temp_str = f"{temp_str}°C"
+            if not temp_str:
+                temp_str = "缺测"
+
+        weather = live.get("weather", "")
 
         if "雨" in weather: suggestions.append("🌧️ 当前有雨，请备好雨具")
         elif "雪" in weather: suggestions.append("❄️ 有降雪，注意保暖防滑")
         elif "霾" in weather: suggestions.append("😷 空气质量不佳，建议佩戴口罩")
 
-        if temp >= 30: suggestions.append("☀️ 天气炎热，注意防晒补水")
-        elif temp <= 10: suggestions.append("🧣 气温偏低，注意保暖")
-        else: suggestions.append("🍀 气温宜人，适合出行")
+        if temp is not None:
+            if temp >= 30: suggestions.append("☀️ 天气炎热，注意防晒补水")
+            elif temp <= 10: suggestions.append("🧣 气温偏低，注意保暖")
+            else: suggestions.append("🍀 气温宜人，适合出行")
 
         return {
             "success": True, "type": "live",
-            "city": live["city"], "weather": weather,
-            "temperature": f"{temp}°C",
-            "humidity": f"{live['humidity']}%",
-            "wind": f"{live['winddirection']}风 {live['windpower']}级",
+            "city": live.get("city", city), "weather": weather,
+            "temperature": temp_str,
+            "humidity": f"{live.get('humidity', '')}%",
+            "wind": f"{live.get('winddirection', '')}风 {live.get('windpower', '')}级",
             "suggestions": suggestions,
         }
 
     if extensions == "all" and data.get("forecasts"):
         forecast = data["forecasts"][0]
-        casts = forecast["casts"]
-        today = casts[0]
-        day_t, night_t = float(today["daytemp"]), float(today["nighttemp"])
-        day_w = today["dayweather"]
+        casts = forecast.get("casts", [])
+        if casts:
+            today = casts[0]
+            try:
+                day_t = float(today.get("daytemp"))
+            except (ValueError, TypeError):
+                day_t = None
+            try:
+                night_t = float(today.get("nighttemp"))
+            except (ValueError, TypeError):
+                night_t = None
+            day_w = today.get("dayweather", "")
 
-        if "雨" in day_w: suggestions.append("☔ 今日预计有雨，建议携带雨具")
-        if day_t >= 30: suggestions.append("🧴 紫外线偏强，建议做好防晒")
-        diff = day_t - night_t
-        if diff >= 10: suggestions.append(f"🧥 昼夜温差{diff:.0f}°C，建议备外套")
-        if not suggestions: suggestions.append("✨ 今日天气宜人，祝旅途愉快")
+            if "雨" in day_w: suggestions.append("☔ 今日预计有雨，建议携带雨具")
+            if day_t is not None and day_t >= 30: suggestions.append("🧴 紫外线偏强，建议做好防晒")
+            if day_t is not None and night_t is not None:
+                diff = day_t - night_t
+                if diff >= 10: suggestions.append(f"🧥 昼夜温差{diff:.0f}°C，建议备外套")
+            if not suggestions: suggestions.append("✨ 今日天气宜人，祝旅途愉快")
 
-        days_list = []
-        for c in casts:
-            days_list.append({
-                "date": c["date"],
-                "day_weather": c["dayweather"],
-                "night_weather": c["nightweather"],
-                "temp_range": f"{c['nighttemp']}~{c['daytemp']}°C",
-            })
+            days_list = []
+            for c in casts:
+                d_w = c.get("dayweather", "")
+                n_w = c.get("nightweather", "")
+                nt = c.get("nighttemp", "")
+                dt = c.get("daytemp", "")
+                tr = f"{nt}~{dt}°C" if nt and dt else "缺测"
+                days_list.append({
+                    "date": c.get("date", ""),
+                    "day_weather": d_w,
+                    "night_weather": n_w,
+                    "temp_range": tr,
+                })
 
-        return {
-            "success": True, "type": "forecast",
-            "city": forecast["city"],
-            "today": {"weather": day_w, "temp_range": f"{night_t}~{day_t}°C"},
-            "suggestions": suggestions,
-            "forecast": days_list,
-        }
+            today_tr = f"{night_t}~{day_t}°C" if night_t is not None and day_t is not None else "缺测"
+            return {
+                "success": True, "type": "forecast",
+                "city": forecast.get("city", city),
+                "today": {"weather": day_w, "temp_range": today_tr},
+                "suggestions": suggestions,
+                "forecast": days_list,
+            }
 
     return {"error": "无天气数据"}

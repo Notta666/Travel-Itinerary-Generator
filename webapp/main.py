@@ -223,6 +223,12 @@ async def stream_progress(task_id: str, request: Request):
             yield f"data: {json.dumps({'message': '❌ 失败: ' + err_msg, 'done': True, 'failed': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_failed(), media_type="text/event-stream")
 
+    if task["status"] == "cancelled":
+        err_msg = task.get("error", "用户已取消规划")
+        async def _cancelled():
+            yield f"data: {json.dumps({'message': '⛔ 任务已取消: ' + err_msg, 'done': True, 'failed': True, 'cancelled': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(_cancelled(), media_type="text/event-stream")
+
     seen = len(json.loads(task.get("progress", "[]")))
 
     async def _stream():
@@ -252,6 +258,10 @@ async def stream_progress(task_id: str, request: Request):
             if task["status"] == "failed":
                 err_msg = task.get("error", "")
                 yield f"data: {json.dumps({'message': '❌ 失败: ' + err_msg, 'done': True, 'failed': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
+                break
+            if task["status"] == "cancelled":
+                err_msg = task.get("error", "用户已取消规划")
+                yield f"data: {json.dumps({'message': '⛔ 任务已取消: ' + err_msg, 'done': True, 'failed': True, 'cancelled': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
                 break
     return StreamingResponse(_stream(), media_type="text/event-stream")
 

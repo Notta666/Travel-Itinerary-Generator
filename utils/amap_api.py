@@ -25,6 +25,24 @@ class AmapQuotaError(Exception):
     """高德 API 限流/配额超限错误"""
     pass
 
+def _to_int(v, default=0):
+    """安全转换为整数，支持字符串、浮点及空值容错"""
+    try:
+        if v is None or v == "":
+            return default
+        return int(float(v))
+    except (ValueError, TypeError):
+        return default
+
+def _to_float(v, default=0.0):
+    """安全转换为浮点数，支持空值容错"""
+    try:
+        if v is None or v == "":
+            return default
+        return float(v)
+    except (ValueError, TypeError):
+        return default
+
 # ---- POI 类型码速查 ----
 def load_poi_types():
     """加载本地 POI 分类码表, 返回 {typecode: name}"""
@@ -335,9 +353,9 @@ class AMapClient:
                 if route.get("paths"):
                     p = route["paths"][0]
                     return {
-                        "distance": int(p.get("distance", 0)),
-                        "duration": int(p.get("duration", 0)),
-                        "tolls": float(p.get("tolls", 0)),
+                        "distance": _to_int(p.get("distance", 0)),
+                        "duration": _to_int(p.get("duration", 0)),
+                        "tolls": _to_float(p.get("tolls", 0)),
                         "strategy": p.get("strategy", ""),
                         "steps": p.get("steps", []),
                     }

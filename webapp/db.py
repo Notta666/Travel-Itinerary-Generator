@@ -17,7 +17,7 @@ def _get_db():
 
 
 def _init_db():
-    """Create the tasks table on startup."""
+    """Create the tasks table on startup and reset stale pending/running tasks."""
     with _db_write_lock:
         conn = _get_db()
         try:
@@ -34,6 +34,12 @@ def _init_db():
                     brochure_path TEXT DEFAULT NULL,
                     progress TEXT DEFAULT '[]'
                 )
+            """)
+            # P2-20: 服务重启时重置处于 pending / running 的僵尸任务
+            conn.execute("""
+                UPDATE tasks 
+                SET status='failed', error='服务重启，任务已终止' 
+                WHERE status IN ('pending', 'running')
             """)
             conn.commit()
         finally:

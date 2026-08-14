@@ -177,9 +177,12 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
         _update_task(task_id, status="completed", result=result,
                      brochure_path=result.get("brochure_path", ""))
 
-    except CancelledError:
+    except (CancelledError, InterruptedError):
         _update_task(task_id, status="cancelled", error="用户已取消规划")
     except Exception as e:
+        if "PipelineStoppedError" in type(e).__name__ or "cancelled" in str(e).lower():
+            _update_task(task_id, status="cancelled", error="用户已取消规划")
+            return
         import traceback
         tb_str = traceback.format_exc()
         logger.exception(f"任务 {task_id} 执行异常: {e}")

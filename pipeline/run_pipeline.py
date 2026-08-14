@@ -101,8 +101,15 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                     with ThreadPoolExecutor(max_workers=2) as ex:
                         f8 = ex.submit(step_8_generate_report, copy.deepcopy(context))
                         f85 = ex.submit(step_85_tips, copy.deepcopy(context))
-                        ctx8 = f8.result()
-                        ctx85 = f85.result()
+                        ctx8, ctx85 = {}, {}
+                        try:
+                            ctx8 = f8.result()
+                        except Exception as e:
+                            logger.exception("Step 8 (多城报告生成) 异常: %s", e)
+                        try:
+                            ctx85 = f85.result()
+                        except Exception as e:
+                            logger.exception("Step 8.5 (多城贴士生成) 异常: %s", e)
                     for key in ["itinerary", "report_path", "brochure_path", "overall_note",
                                 "food_highlights", "travel_tips", "weather", "error"]:
                         if key in ctx8:
@@ -219,6 +226,11 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
         with StepTimer("Step 7 门票查询", timings):
             context = step_7_query_tickets(context)
 
+        # P2-5: 多城市模式下的子管线只执行到 Step 7（行程规划与门票），避免重复生成单城孤儿文件
+        if prefs.get("is_sub_pipeline"):
+            _report("done", f"✅ {city} 子管线规划完成", 100)
+            return context
+
         _check_stop(cancel_event, "Step 8")
         _report("report", "Step 8/9: 攻略报告 📝", 65)
         if "tips" in enabled_steps:
@@ -226,8 +238,15 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                 with ThreadPoolExecutor(max_workers=2) as ex:
                     f8 = ex.submit(step_8_generate_report, copy.deepcopy(context))
                     f85 = ex.submit(step_85_tips, copy.deepcopy(context))
-                    ctx8 = f8.result()
-                    ctx85 = f85.result()
+                    ctx8, ctx85 = {}, {}
+                    try:
+                        ctx8 = f8.result()
+                    except Exception as e:
+                        logger.exception("Step 8 (报告生成) 异常: %s", e)
+                    try:
+                        ctx85 = f85.result()
+                    except Exception as e:
+                        logger.exception("Step 8.5 (贴士生成) 异常: %s", e)
                 for key in ["itinerary", "report_path", "brochure_path", "overall_note",
                             "food_highlights", "travel_tips", "weather", "error"]:
                     if key in ctx8:

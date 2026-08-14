@@ -25,7 +25,7 @@ def step_7_query_tickets(context):
     print(f"Step 7/9: 景点门票价格查询 🎫")
     print(f"{'='*50}")
 
-    flyai = context.get("flyai_prices", {})
+    flyai = context.get("flyai_prices") or {}
     if not flyai.get("available"):
         print("  ⏭️  跳过门票查询（FlyAI 不可用或无数据）")
         return context

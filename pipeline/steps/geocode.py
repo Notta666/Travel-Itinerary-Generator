@@ -37,7 +37,11 @@ def step_3_geocode(context, manual_pois=None):
                 "北京": ["故宫博物院", "天坛", "颐和园", "长城", "南锣鼓巷", "三里屯", "国家博物馆"],
                 "杭州": ["西湖", "灵隐寺", "雷峰塔", "河坊街", "西溪湿地", "杭州博物馆"],
             }
-        pois_to_code = default_pois.get(city, default_pois.get("上海"))
+        pois_to_code = default_pois.get(city, [])
+        if not pois_to_code:
+            print(f"  ⚠️ 未知城市 '{city}' 无内置默认景点数据，且未提取到有效POI")
+            context["poi_geocoded"] = []
+            return context
 
     cities_list = [c.strip() for c in city.replace("，", ",").split(",") if c.strip()]
 
@@ -71,8 +75,6 @@ def step_3_geocode(context, manual_pois=None):
         c_coord = amap.geocode(lookup_c)
         if c_coord:
             city_centers.append(c_coord)
-    if not city_centers:
-        city_centers = [(121.4737, 31.2304)]
 
     # 智能前缀纠偏地理编码
     results = {}
@@ -130,13 +132,17 @@ def step_3_geocode(context, manual_pois=None):
     for name in pois_to_code:
         coord = results.get(name)
 
-        is_drift = True
+        is_drift = False
         if coord:
-            for cx, cy in city_centers:
-                dist = abs(coord[0] - cx) * 111 + abs(coord[1] - cy) * 111
-                if dist <= 100:
-                    is_drift = False
-                    break
+            if city_centers:
+                is_drift = True
+                for cx, cy in city_centers:
+                    dist = abs(coord[0] - cx) * 111 + abs(coord[1] - cy) * 111
+                    if dist <= 100:
+                        is_drift = False
+                        break
+            else:
+                is_drift = False
 
         if (is_drift or not coord) and cities_list:
             for c_prefix in cities_list[:3]:
@@ -145,11 +151,14 @@ def step_3_geocode(context, manual_pois=None):
                 fallback_coord = amap.geocode(fallback_name)
                 if fallback_coord:
                     valid_fallback = False
-                    for cx, cy in city_centers:
-                        dist = abs(fallback_coord[0] - cx) * 111 + abs(fallback_coord[1] - cy) * 111
-                        if dist <= 100:
-                            valid_fallback = True
-                            break
+                    if city_centers:
+                        for cx, cy in city_centers:
+                            dist = abs(fallback_coord[0] - cx) * 111 + abs(fallback_coord[1] - cy) * 111
+                            if dist <= 100:
+                                valid_fallback = True
+                                break
+                    else:
+                        valid_fallback = True
                     if valid_fallback:
                         coord = fallback_coord
                         is_drift = False

@@ -3,6 +3,13 @@ import re
 import datetime
 from pipeline.pipeline_context import PipelineContext
 
+try:
+    from pipeline.run_pipeline import PipelineStoppedError
+except ImportError:
+    class PipelineStoppedError(Exception):
+        pass
+
+
 def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, progress_callback, multi_cities_list, cancel_event=None):
     from pipeline.steps.init import step_1_init
     
@@ -21,12 +28,13 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
 
     for idx, c in enumerate(multi_cities_list):
         if cancel_event and cancel_event.is_set():
-            raise Exception("Pipeline cancelled")
+            raise PipelineStoppedError("Pipeline cancelled")
             
         c_days = days_per_city + (1 if idx < rem else 0)
         c_prefs = copy.deepcopy(prefs)
         c_prefs["multi_cities"] = []
         c_prefs["start_date"] = current_date
+        c_prefs["is_sub_pipeline"] = True
         
         if idx > 0:
             c_prefs["start_city"] = multi_cities_list[idx - 1]
@@ -40,6 +48,9 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
             cancel_event=cancel_event
         )
         
+        if sub_ctx.get("error"):
+            print(f"  ⚠️ [多城市模式] 城市 {c} 子管线执行异常: {sub_ctx['error']}，将跳过合并该城行程")
+        
         city_contexts[c] = sub_ctx
         
         try:
@@ -50,7 +61,9 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
 
     total_days_accumulated = 0
     for idx, c in enumerate(multi_cities_list):
-        sub_ctx = city_contexts[c]
+        sub_ctx = city_contexts.get(c, {})
+        if sub_ctx.get("error"):
+            continue
         sub_itinerary = sub_ctx.get("itinerary") or []
         c_days = days_per_city + (1 if idx < rem else 0)
         
@@ -89,7 +102,11 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     leg_start_day = 1
     for idx, c in enumerate(multi_cities_list):
         c_days = days_per_city + (1 if idx < rem else 0)
-        sub_flyai = city_contexts[c].get("flyai_prices", {})
+        sub_ctx = city_contexts.get(c, {})
+        if sub_ctx.get("error"):
+            leg_start_day += c_days
+            continue
+        sub_flyai = sub_ctx.get("flyai_prices", {})
         if sub_flyai.get("available"):
             combined_flyai["available"] = True
             if "tickets" in sub_flyai:
@@ -132,6 +149,6 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     context["itinerary"] = combined_itinerary
     context["food_highlights"] = combined_food_highlights
     context["overall_note"] = combined_overall_note
-    context["city_itineraries"] = {c: city_contexts[c].get("itinerary") for c in multi_cities_list}
+    context["city_itineraries"] = {c: city_contexts[c].get("itinerary") for c in multi_cities_list if c in city_contexts and not city_contexts[c].get("error")}
 
     return context

@@ -404,9 +404,14 @@ function startStream(taskId){
     if(d.message)document.getElementById('liveMsg').textContent=d.message;
     if(d.step){markStep(d.step);setSub(d.step,d.message);}
     if(d.done){
-      es.close();es=null;
-      if(d.failed){showError(d.error||'生成失败');}
-      else{showResult(taskId);}
+      if(es){es.close();es=null;}
+      if(d.cancelled){
+        document.getElementById('liveMsg').textContent=d.message||'⛔ 任务已取消';
+      }else if(d.failed){
+        showError(d.error||'生成失败');
+      }else{
+        showResult(taskId);
+      }
     }
   };
   es.onerror=function(){/* 连接关闭或中断，等待 done/failed */};
@@ -455,9 +460,13 @@ document.getElementById('genBtn').addEventListener('click',function(){
 
 document.getElementById('cancelBtn').addEventListener('click',function(){
   if(!currentTaskId)return;
-  fetch('/cancel/'+currentTaskId,{method:'POST'}).then(function(){
-    if(es)es.close();
-    document.getElementById('liveMsg').textContent='已发送取消请求';
+  document.getElementById('liveMsg').textContent='正在中断…';
+  fetch('/cancel/'+currentTaskId,{method:'POST'}).then(function(r){
+    if(!r.ok){
+      document.getElementById('liveMsg').textContent='取消请求失败';
+    }
+  }).catch(function(){
+    document.getElementById('liveMsg').textContent='取消请求发送异常';
   });
 });
 

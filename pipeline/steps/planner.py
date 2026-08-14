@@ -375,19 +375,31 @@ Bear悠闲避雷方案摘要: {bear_summary}
     for fr in food_list:
         loc = fr.get("location", "")
         if isinstance(loc, (list, tuple)) and len(loc) >= 2:
-            food_coord_map[fr["name"]] = [float(loc[0]), float(loc[1])]
+            try:
+                food_coord_map[fr["name"]] = [float(loc[0]), float(loc[1])]
+            except (ValueError, TypeError, IndexError):
+                pass
         elif isinstance(loc, str) and "," in loc:
-            lng, lat = loc.split(",")
-            food_coord_map[fr["name"]] = [float(lng), float(lat)]
+            try:
+                parts = loc.split(",", 1)
+                food_coord_map[fr["name"]] = [float(parts[0]), float(parts[1])]
+            except (ValueError, TypeError, IndexError):
+                pass
     for ep in pois:
         for nf in ep.get("nearby_food", []):
             if isinstance(nf, dict):
                 nf_loc = nf.get("location", "")
                 if isinstance(nf_loc, (list, tuple)) and len(nf_loc) >= 2:
-                    food_coord_map[nf.get("name", "")] = [float(nf_loc[0]), float(nf_loc[1])]
+                    try:
+                        food_coord_map[nf.get("name", "")] = [float(nf_loc[0]), float(nf_loc[1])]
+                    except (ValueError, TypeError, IndexError):
+                        pass
                 elif isinstance(nf_loc, str) and "," in nf_loc:
-                    lng, lat = nf_loc.split(",")
-                    food_coord_map[nf.get("name", "")] = [float(lng), float(lat)]
+                    try:
+                        parts = nf_loc.split(",", 1)
+                        food_coord_map[nf.get("name", "")] = [float(parts[0]), float(parts[1])]
+                    except (ValueError, TypeError, IndexError):
+                        pass
 
     # 城市中心坐标（用于验证合理性，支持多城）
     cities_list = [c.strip() for c in re.split(r"[+,，]", city) if c.strip()]

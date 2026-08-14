@@ -74,7 +74,9 @@ def _parse_goal(goal_text):
         from utils.llm import call_deepseek
         result = call_deepseek("你是一个旅行规划助手。返回纯JSON。", prompt, temperature=0.3, max_tokens=2000)
         if isinstance(result, dict):
-            city = result.get("city", "上海")
+            city = result.get("city", "").strip()
+            if not city:
+                raise ValueError("目标解析失败：未能识别目的地城市，请重述需求")
             start_city = result.get("start_city", "")
             days = int(result.get("days", 2))
             pois = result.get("pois", [])
@@ -85,7 +87,7 @@ def _parse_goal(goal_text):
             start_date = result.get("start_date", "")
             people_count = int(result.get("people_count", 2))
             multi_cities = result.get("multi_cities", [])
-            print(f"\\n🎯 目标解析结果:")
+            print(f"\n🎯 目标解析结果:")
             print(f"   出发城市: {start_city or '未指定(将通过IP定位)'}")
             print(f"   目的地: {city}")
             if multi_cities:
@@ -110,6 +112,7 @@ def _parse_goal(goal_text):
                 "multi_cities": multi_cities,
                 "_budget_parsed": _parse_budget(budget, days, people_count),
             }
+        raise ValueError("目标解析失败：LLM未能返回有效的结构化JSON，请重述需求")
     except Exception as e:
-        print(f"  ⚠️ 目标解析失败: {e}，使用默认参数")
-    return "上海", 2, [], {}
+        print(f"  ⚠️ 目标解析失败: {e}")
+        raise ValueError(f"目标解析失败：{e}")
