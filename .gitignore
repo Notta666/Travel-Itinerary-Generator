@@ -48,6 +48,7 @@ update_transport_table.py
 reports/
 outputs/*.html
 IDEA.md
+/_prompt_*.md
 
 # System & OS files
 .DS_Store

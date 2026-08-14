@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="AI旅行攻略", version="3.5.7")
+app = FastAPI(title="AI旅行攻略", version="3.5.8")
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["POST", "GET", "OPTIONS"], allow_headers=["*"])
 
 # Static files and templates setup
@@ -88,7 +88,7 @@ class GenerateRequest(BaseModel):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "3.5.7"}
+    return {"status": "ok", "version": "3.5.8"}
 
 
 @app.get("/", response_class=HTMLResponse)

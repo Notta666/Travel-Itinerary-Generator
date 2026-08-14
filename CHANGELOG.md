@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.8] - 2026-08-14
+### Security
+- **XSS 根除（P0×2）**：`utils/brochure/renderer.py` 启用 Jinja2 `select_autoescape` 模板级转义；`__init__.py` `all_hotels_json` 经 `_js_json()` 中和 `</script>`（此前仅修 map_items_json/popup）。city/cover_extra/accommodation/tips/美食/rating/transit/天气字段现均转义落盘
+- **CORS 门控**：`webapp/config.py` 加载 `.env`（python-dotenv）并实现 `CORS_ALLOW_ALL` 双确认，杜绝误开 `*`
+- **API_TOKEN 鉴权 + 限流**：`/generate`、`/cancel` 接入可选 API_TOKEN 校验（Bearer/x-api-key/token）；每 IP 10 次/分钟限流（429）
+
+### Fixed
+- **崩溃类（P1）**：`pricing_and_transport` dep_date NameError、`enrich` 空 `min()` ValueError、多城 days<城市数 `planner` ZeroDivision、`task_manager` 取消竞态（CAS 原子 UPDATE，不再覆盖 cancelled）
+- **数据诚信（铁律）**：`weather.py` 历史天气缺测不再静默填 30/22°C，改显式"缺测"；`geocode.py` 删上海中心硬编码兜底（121.4737/31.2304），改城市前缀重编码 + `unresolved` 标注
+- **限流实效**：`amap_api.py` `_rate_limit` 锁内真正 `sleep`（原仅置时间戳导致突发 429）
+- **tasks.db 无限增长（M3）**：`db.py` 启动 TTL 清理 + VACUUM；重启时重置 pending/running 僵尸任务
+
+### Changed
+- **SSE 取消 UX**：`/stream` 新增 cancelled 分支，取消后前端不再假死
+- **小红书调研并发**：`research.py` 串行 sleep 改 `ThreadPoolExecutor(max_workers=3)`
+- **测试覆盖**：新增 `test_e2e.py`、`test_network.py`，增强 `test_audit_fixes.py`/`test_weather.py`/`test_goal_parser.py`/`test_pipeline_robustness.py`；全量 98 passed
+
 ## [3.5.7] - 2026-08-09
 ### Added
 - **根目录 ASGI 入口**：新增 `main.py` 转发，支持从项目根目录 `uvicorn main:app` 启动 WebApp
