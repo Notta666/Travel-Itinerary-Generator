@@ -85,6 +85,12 @@ class GenerateRequest(BaseModel):
         return getattr(self, key, default)
 
 
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok", "version": "3.5.7"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serve the main page from the Jinja2 template."""
@@ -96,7 +102,8 @@ async def check_opencli_route():
     """Check OpenCLI installation and Xiaohongshu login status."""
     from utils.research import check_opencli_status
     ok, msg, details = check_opencli_status()
-    return {"ok": ok, "message": msg, "details": details}
+    # P3-13: 不回传敏感 npm/安装路径细节
+    return {"ok": ok, "message": msg}
 
 
 @app.post("/generate")
@@ -120,12 +127,14 @@ async def generate(data: GenerateRequest, request: Request):
     hotel_budget_max = data.hotel_budget_max
     user_prefs = data.prefs
 
+    if hotel_budget_min > hotel_budget_max:
+        raise HTTPException(400, "酒店预算下限不能大于上限")
+
     if not isinstance(enabled_steps, (list, tuple, set)):
         enabled_steps = ["research", "enrich", "distance", "flyai", "tips"]
     else:
+        # P3-13: 尊重用户选项，不强制追加 research
         enabled_steps = [s for s in enabled_steps if s in VALID_STEPS]
-        if "research" not in enabled_steps:
-            enabled_steps.append("research")
 
     if not goal:
         raise HTTPException(400, "请输入目的地描述")
@@ -160,19 +169,26 @@ async def cancel_task_endpoint(task_id: str, request: Request):
 
 @app.get("/status/{task_id}")
 async def get_status(task_id: str):
-    """Query task status."""
+    """Query task status with progress support for SSE fallback polling (P3-15)."""
     task = _get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
+    try:
+        progress_data = json.loads(task.get("progress", "[]"))
+    except (json.JSONDecodeError, TypeError):
+        progress_data = []
     resp = {
         "status": task["status"],
         "goal": task.get("goal", ""),
         "created": task.get("created", 0),
+        "progress": progress_data,
     }
     if task["status"] == "completed":
         resp["result"] = task.get("result", {})
     if task["status"] == "failed":
         resp["error"] = task.get("error", "")
+    if task["status"] == "cancelled":
+        resp["error"] = task.get("error", "用户已取消规划")
     return resp
 
 
@@ -202,12 +218,17 @@ async def download(task_id: str):
     path = task.get("result", {}).get("brochure_path", "")
     if not path or not os.path.exists(path):
         raise HTTPException(404, "文件不存在")
-    return FileResponse(path, filename=os.path.basename(path), media_type="text/html")
+    # P3-13: 校验路径在 OUTPUTS_DIR 内，防止目录穿越
+    real_path = os.path.realpath(path)
+    real_outputs = os.path.realpath(OUTPUTS_DIR)
+    if not (real_path == real_outputs or real_path.startswith(real_outputs + os.sep)):
+        raise HTTPException(403, "非法下载路径")
+    return FileResponse(real_path, filename=os.path.basename(real_path), media_type="text/html")
 
 
 @app.get("/stream/{task_id}")
-async def stream_progress(task_id: str, request: Request):
-    """SSE endpoint: real-time progress via Server-Sent Events."""
+async def stream_progress(task_id: str, request: Request, seen: int = None):
+    """SSE endpoint: real-time progress via Server-Sent Events with reconnection gap prevention (P3-14)."""
     task = _get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
@@ -229,10 +250,18 @@ async def stream_progress(task_id: str, request: Request):
             yield f"data: {json.dumps({'message': '⛔ 任务已取消: ' + err_msg, 'done': True, 'failed': True, 'cancelled': True, 'error': err_msg}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_cancelled(), media_type="text/event-stream")
 
-    seen = len(json.loads(task.get("progress", "[]")))
+    # P3-14: 支持 ?seen= query 参数及 Last-Event-ID header，避免重连时产生时间线间隙
+    if seen is None:
+        last_id = request.headers.get("last-event-id")
+        if last_id and last_id.isdigit():
+            seen_idx = int(last_id)
+        else:
+            seen_idx = 0
+    else:
+        seen_idx = max(0, seen)
 
     async def _stream():
-        nonlocal seen
+        nonlocal seen_idx
         yield f"data: {json.dumps({'message': '⏳ 任务已提交，等待执行...', 'done': False}, ensure_ascii=False)}\n\n"
         while True:
             if await request.is_disconnected():
@@ -248,10 +277,10 @@ async def stream_progress(task_id: str, request: Request):
                 progress = json.loads(task.get("progress", "[]"))
             except (json.JSONDecodeError, TypeError):
                 progress = []
-            if len(progress) > seen:
-                for p in progress[seen:]:
-                    yield f"data: {json.dumps({'message': p.get('message', ''), 'step': p.get('step', ''), 'pct': p.get('pct', 0), 'done': False}, ensure_ascii=False)}\n\n"
-                seen = len(progress)
+            if len(progress) > seen_idx:
+                for idx, p in enumerate(progress[seen_idx:], start=seen_idx + 1):
+                    yield f"id: {idx}\ndata: {json.dumps({'message': p.get('message', ''), 'step': p.get('step', ''), 'pct': p.get('pct', 0), 'done': False}, ensure_ascii=False)}\n\n"
+                seen_idx = len(progress)
             if task["status"] == "completed":
                 yield f"data: {json.dumps({'message': '✅ 任务完成', 'done': True}, ensure_ascii=False)}\n\n"
                 break
@@ -268,11 +297,12 @@ async def stream_progress(task_id: str, request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    # 监听地址可配置：默认 0.0.0.0（允许公网/容器访问）
+    # 监听地址与端口可配置：默认 0.0.0.0:8080
     _host = os.environ.get("HOST", "0.0.0.0")
+    _port = int(os.environ.get("PORT", "8080"))
     print("🌍 AI旅行攻略 Web App 启动中...")
-    print(f"   访问地址: http://localhost:8080  (host={_host})")
+    print(f"   访问地址: http://localhost:{_port}  (host={_host})")
     print("   按 Ctrl+C 停止")
     print(f"   SQLite 数据库: {DB_PATH}")
-    uvicorn.run(app, host=_host, port=8080, timeout_keep_alive=600)
+    uvicorn.run(app, host=_host, port=_port, timeout_keep_alive=600)
 

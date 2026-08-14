@@ -16,8 +16,8 @@ def _get_db():
     return conn
 
 
-def _init_db():
-    """Create the tasks table on startup and reset stale pending/running tasks."""
+def _init_db(ttl_days=30):
+    """Create the tasks table on startup, clean up expired records, and reset stale pending/running tasks."""
     with _db_write_lock:
         conn = _get_db()
         try:
@@ -41,7 +41,24 @@ def _init_db():
                 SET status='failed', error='服务重启，任务已终止' 
                 WHERE status IN ('pending', 'running')
             """)
+            # P2-11: tasks.db TTL 清理与 VACUUM（保留 ttl_days 天内的记录）
+            cutoff = time.time() - (ttl_days * 86400)
+            conn.execute("DELETE FROM tasks WHERE created < ?", (cutoff,))
             conn.commit()
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
+
+
+def cleanup_expired_tasks(ttl_days=30):
+    """Delete tasks older than ttl_days and vacuum the database."""
+    with _db_write_lock:
+        conn = _get_db()
+        try:
+            cutoff = time.time() - (ttl_days * 86400)
+            conn.execute("DELETE FROM tasks WHERE created < ?", (cutoff,))
+            conn.commit()
+            conn.execute("VACUUM")
         finally:
             conn.close()
 
@@ -110,3 +127,4 @@ def _get_task(task_id):
 store_task = _store_task
 update_task = _update_task
 get_task = _get_task
+init_db = _init_db

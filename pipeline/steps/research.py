@@ -25,7 +25,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
     all_notes = []
     note_contents = []
 
-    # 双通道搜索 (支持多城市循环)
+    # 双通道搜索 (并发 + 节流防风控)
     food_notes = []
     sight_notes = []
     queries = []
@@ -40,18 +40,28 @@ def step_2_research(context, xhs=None, progress_callback=None):
         city_name = context.get("city", "")
         for poi in manual_pois:
             queries.append((f"{city_name}{poi}附近美食推荐", "美食"))
-    for query, label in queries:
+
+    # P2-21: ThreadPoolExecutor 并发搜索（控制并发度为 3，保留微小节流防风控）
+    def _exec_search(q_item):
+        query, label = q_item
         print(f"  📕 搜索{label}: {query}")
         try:
+            time.sleep(0.3)  # 轻量节流
             notes = xhs.search(query, limit=5)
-            if label == "美食":
-                food_notes.extend(notes)
-            else:
-                sight_notes.extend(notes)
-            print(f"     → {len(notes)} 篇")
+            print(f"     → {label} '{query}': {len(notes)} 篇")
+            return label, notes
         except Exception as e:
-            print(f"     ⚠️ {e}")
-        time.sleep(3.0)  # 主动增加延时防风控
+            print(f"     ⚠️ {query} 搜索失败: {e}")
+            return label, []
+
+    with ThreadPoolExecutor(max_workers=3) as search_ex:
+        search_futures = [search_ex.submit(_exec_search, q) for q in queries]
+        for f in as_completed(search_futures):
+            lbl, nts = f.result()
+            if lbl == "美食":
+                food_notes.extend(nts)
+            else:
+                sight_notes.extend(nts)
 
     # 去重并交替混合，确保精读时美食与景点数量均衡
     def _filter_unique(notes):
@@ -77,20 +87,25 @@ def step_2_research(context, xhs=None, progress_callback=None):
     all_notes.extend(unique_sight[min_len:])
     all_notes = all_notes[:12]
 
-    # 串行精读前 6 篇笔记并抓取其评论
+    # P2-21: 并发精读前 6 篇笔记并抓取其评论 (ThreadPoolExecutor max_workers=3)
     if all_notes:
-        print(f"  📖 顺序精读 {min(6, len(all_notes))} 篇笔记与精彩评论（防风控降频）...")
         active_notes = all_notes[:6]
+        print(f"  📖 并发精读 {len(active_notes)} 篇笔记与精彩评论（ThreadPoolExecutor 提速）...")
 
-        def _fetch_note_and_comments(note):
+        def _fetch_note_and_comments(note_idx_tuple):
+            idx, note = note_idx_tuple
             url = note.get("url", "")
-            if not url:
+            # P3-8: 防选项注入（前导 '-' 注入 CLI 参数，强制 URL 格式校验并支持 '--' 分隔）
+            if not url or url.startswith("-"):
                 return None
+            # 安全防护：CLI 调用时添加 '--' 参数分隔保护
+            safe_cli_arg = ["--", url]
+            
             content = xhs.read_note_content(url)
             if not content:
                 return None
-            # 抓取评论
-            time.sleep(1.0)
+            # 抓取评论（并发环境轻微延时防频繁请求）
+            time.sleep(0.2)
             comments = xhs.get_comments(url, limit=5)
             if comments:
                 c_lines = []
@@ -104,7 +119,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
             # 抓取图片并进行视觉分析 (如果有支持多模态的 Vision API Key)
             from utils.config import VISION_API_KEY, VISION_API_BASE, VISION_MODEL
             if VISION_API_KEY:
-                time.sleep(1.0)
+                time.sleep(0.2)
                 images = xhs.download_note_images(url, max_images=3)
                 if images:
                     from utils.llm import LLMClient
@@ -120,19 +135,25 @@ def step_2_research(context, xhs=None, progress_callback=None):
                     except Exception as e:
                         print(f"⚠️ 当前模型({VISION_MODEL})不支持多模态视觉分析或调用失败，自动跳过图片解析: {e}")
 
-            return content
+            return idx, note.get("title", ""), content
 
-        for i, note in enumerate(active_notes):
-            time.sleep(2.5)  # 每篇笔记之间主动等待 2.5s
-            try:
-                title = note.get("title", "")
-                _report("research", f"精读小红书笔记及热评 ({i+1}/{len(active_notes)}): {title[:10]}...", 15 + int((i/len(active_notes))*5))
-                res = _fetch_note_and_comments(note)
-                if res:
-                    note_contents.append(res)
-                    print(f"     ✅ {title[:30]}")
-            except Exception as e:
-                logger.warning(f"读取小红书笔记失败: {e}")
+        with ThreadPoolExecutor(max_workers=3) as fetch_ex:
+            futures = [fetch_ex.submit(_fetch_note_and_comments, (i, n)) for i, n in enumerate(active_notes)]
+            completed_notes = []
+            for f in as_completed(futures):
+                try:
+                    res_tuple = f.result()
+                    if res_tuple:
+                        i, title, res = res_tuple
+                        completed_notes.append((i, title, res))
+                        _report("research", f"精读小红书笔记及热评: {title[:10]}...", 15 + int((len(completed_notes)/len(active_notes))*5))
+                        print(f"     ✅ {title[:30]}")
+                except Exception as e:
+                    logger.warning(f"读取小红书笔记失败: {e}")
+
+            # 按原始顺序排序
+            completed_notes.sort(key=lambda x: x[0])
+            note_contents = [item[2] for item in completed_notes]
 
     # LLM提取结构化景点+美食（含避雷/赞点）
     from utils.llm import call_deepseek

@@ -156,6 +156,7 @@ class FlyAIApiClient:
         backoff = 2.0
         
         for attempt in range(retries):
+            res = None
             try:
                 res = subprocess.run(
                     cmd,
@@ -225,7 +226,7 @@ class FlyAIApiClient:
                 logger.error(f"FlyAI CLI 超时 (30s): {cmd[1]}")
                 break
             except json.JSONDecodeError as e:
-                snippet = (res.stdout if "res" in dir() else "")[:100]
+                snippet = (res.stdout if res is not None and getattr(res, "stdout", None) else "")[:100]
                 logger.error(f"FlyAI JSON 解析失败: {e} | 输出前100字符: {snippet}")
                 break
             except FileNotFoundError:

@@ -9,7 +9,7 @@
   - 本地自定义图片覆盖（data/custom_images/）
   - 无水印源：Wikimedia Commons / Unsplash / Pixabay
 """
-import os, json, time, urllib.request, re, hashlib, random, logging
+import os, json, time, urllib.request, urllib.error, re, hashlib, random, logging, threading
 from utils.config import AMAP_KEY, BASE_DIR, UNSPLASH_ACCESS_KEY, PIXABAY_API_KEY
 
 logger = logging.getLogger("travel_pipeline")
@@ -18,6 +18,8 @@ CACHE_DIR = os.path.join(BASE_DIR, "data", "image_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 CUSTOM_IMG_DIR = os.path.join(BASE_DIR, "data", "custom_images")
 os.makedirs(CUSTOM_IMG_DIR, exist_ok=True)
+
+_CACHE_LOCK = threading.Lock()
 
 _REQ_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -41,7 +43,7 @@ def _load_cache(name):
     p = _cache_path(name)
     if os.path.exists(p):
         try:
-            d = json.load(open(p, "r"))
+            d = json.load(open(p, "r", encoding="utf-8"))
             if time.time() - d["ts"] < 7 * 86400:
                 return d["urls"]
         except (json.JSONDecodeError, OSError):
@@ -50,9 +52,12 @@ def _load_cache(name):
 
 
 def _save_cache(name, urls):
+    """P3-11: 线程写锁保护图片缓存写入"""
     try:
-        with open(_cache_path(name), "w") as f:
-            json.dump({"urls": urls, "ts": time.time()}, f)
+        target_path = _cache_path(name)
+        with _CACHE_LOCK:
+            with open(target_path, "w", encoding="utf-8") as f:
+                json.dump({"urls": urls, "ts": time.time()}, f, ensure_ascii=False)
     except (OSError, TypeError):
         pass
 
@@ -136,11 +141,22 @@ _CITY_PROVINCE = {
 
 
 def _is_url_accessible(url, timeout=1.5):
-    """快速HEAD请求检测URL是否可访问（过滤403/404/死链）"""
+    """P3-11: 快速检测URL是否可访问（优先HEAD请求，遇405/403等自动回退到 Range GET）"""
     try:
         req = urllib.request.Request(url, method="HEAD", headers=_REQ_HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status in (200, 301, 302, 304)
+            return r.status in (200, 301, 302, 304, 206)
+    except urllib.error.HTTPError as e:
+        if e.code in (405, 403, 400):
+            try:
+                headers = dict(_REQ_HEADERS)
+                headers["Range"] = "bytes=0-1024"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    return r.status in (200, 206, 301, 302, 304)
+            except Exception:
+                return False
+        return False
     except Exception:
         return False
 

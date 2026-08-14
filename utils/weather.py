@@ -3,6 +3,7 @@
 ================
 零额外依赖，使用高德API获取城市天气并生成出行建议。
 """
+"""高德天气工具库与出行建议"""
 import urllib.request, json, time
 from utils.config import AMAP_KEY
 
@@ -15,13 +16,13 @@ def _fetch_json(url, timeout=8):
 import datetime as _dt
 
 def get_weather_for_dates(city="上海", start_date=None, days=2):
-    if isinstance(city, str) and "," in city:
-        city = city.split(",")[0]
     """
     获取指定日期的天气（支持未来3天内预报，超过3天返回历史平均数据）
     start_date: datetime.date 对象，或 YYYY-MM-DD 字符串，默认为今天
     返回结构化天气数据
     """
+    if isinstance(city, str) and "," in city:
+        city = city.split(",")[0]
     import datetime as _dt
     if start_date is None:
         start_date = _dt.date.today()
@@ -187,13 +188,13 @@ def get_weather_for_dates(city="上海", start_date=None, days=2):
 
 
 def get_weather(city="上海", extensions="all"):
-    if isinstance(city, str) and "," in city:
-        city = city.split(",")[0]
     """
     获取城市天气预报，自动通过地理编码解析adcode。
     extensions: 'base'=实况, 'all'=今明后三天预报
     返回结构化天气数据 + 出行建议
     """
+    if isinstance(city, str) and "," in city:
+        city = city.split(",")[0]
     # Step 1: 地理编码获取adcode
     try:
         enc = urllib.request.quote(city)

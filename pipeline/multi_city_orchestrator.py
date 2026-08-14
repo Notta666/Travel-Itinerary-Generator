@@ -80,10 +80,26 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
             
             new_item["accommodation_city"] = c
 
+            # P2-23: 多城市过渡日平滑衔接打磨（城际交通、退房与抵达时间过渡）
             if idx > 0 and old_day == 1:
-                # We used to inject a fake transit_slot here, but now we delegate it 
-                # entirely to the standalone transport section in brochure rendering.
-                pass
+                prev_city = multi_cities_list[idx - 1]
+                trans_msg = f"【城际交通过渡】从 {prev_city} 退房出发前往 {c}，预计城际耗时 1~2.5 小时，建议午间抵达办理行李寄存或入住后开启游览。"
+                if new_item.get("summary"):
+                    new_item["summary"] = f"{trans_msg} {new_item['summary']}"
+                else:
+                    new_item["summary"] = trans_msg
+                new_item["transition_from"] = prev_city
+                
+                # 平滑首个 slot 的交通提示
+                if new_item.get("pois"):
+                    first_poi = new_item["pois"][0]
+                    if not first_poi.get("transit") or first_poi.get("transit") == "出发":
+                        first_poi["transit"] = f"城际交通: {prev_city} → {c} (抵达后前往)"
+                if new_item.get("slots"):
+                    for s in new_item["slots"]:
+                        if not s.get("transit") or s.get("transit") == "出发":
+                            s["transit"] = f"城际交通: {prev_city} → {c} (抵达后前往)"
+                            break
             
             combined_itinerary.append(new_item)
         
@@ -95,6 +111,14 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         
         if sub_ctx.get("overall_note"):
             combined_overall_note += f"\n### {c} 规划说明\n{sub_ctx['overall_note']}\n"
+
+    # P2-23: 注入多城市过渡与城际动线综合建议
+    if len(multi_cities_list) > 1:
+        combined_overall_note += "\n### 多城市过渡与城际衔接建议 (Transition Guide)\n"
+        for i in range(1, len(multi_cities_list)):
+            from_c = multi_cities_list[i - 1]
+            to_c = multi_cities_list[i]
+            combined_overall_note += f"- **{from_c} → {to_c} 过渡日**：建议在前序城市游览结束后上午出发，乘坐高铁/城际巴士抵达 {to_c}，先至酒店寄存行李再轻装出行。\n"
 
     combined_flyai = {"available": False, "tickets": {}, "transport_legs": []}
     

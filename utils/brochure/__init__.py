@@ -9,6 +9,17 @@ from utils.config import AMAP_KEY, BASE_DIR
 # HTML 转义辅助：所有注入进手册 HTML 的外部/LLM 派生文本必须经此转义，防 XSS
 _esc = html.escape
 
+def _safe_url(url):
+    """Escape URL for HTML attribute, refusing dangerous protocols (e.g. javascript:)."""
+    if not url:
+        return ""
+    u = str(url).strip()
+    scheme = u.split(":", 1)[0].lower() if ":" in u else ""
+    if scheme in ("javascript", "vbscript", "data"):
+        return "#"
+    return html.escape(u, quote=True)
+
+
 def _js_json(obj):
     """Serialize object to JSON safe for embedding in <script> tag (neutralizes </)."""
     return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
@@ -312,13 +323,13 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 selected_class = "selected" if hi == 0 else ""
                 
                 # 酒店主图
-                pic_html = f'<img class="hpic" src="{_esc(str(main_pic))}" alt="" onerror="this.style.display=\'none\'">' if main_pic else ""
+                pic_html = f'<img class="hpic" src="{_safe_url(main_pic)}" alt="" onerror="this.style.display=\'none\'">' if main_pic else ""
                 
                 is_selected = (hi == 0)
                 label_tag = "首选" if is_selected else f"备选{hi}"
                 # 飞猪预订链接兜底
                 burl = f"https://hotel.fliggy.com/hotel_detail2.htm?keywords={urllib.parse.quote(str(h.get('name', '')))}"
-                book_btn = f'<a class="btn-book" href="{_esc(burl)}" target="_blank" onclick="event.stopPropagation()" style="margin-left:auto; padding:4px 10px; font-size:11px;">飞猪预订</a>'
+                book_btn = f'<a class="btn-book" href="{_safe_url(burl)}" target="_blank" onclick="event.stopPropagation()" style="margin-left:auto; padding:4px 10px; font-size:11px;">飞猪预订</a>'
                 
                 hc += (
                     f'<div class="hc {selected_class}" data-day="{day_num}" data-idx="{hi}" onclick="selectHotel({day_num},{hi})">'
@@ -364,8 +375,10 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             photos = s["photos"]
             has_photo = bool(photos)
             photo_url = photos[0] if has_photo else ""
+            clean_photo_url = _safe_url(photo_url) if photo_url else ""
+            if clean_photo_url == "#": clean_photo_url = ""
             grad = _color_for(d["name"], is_food)
-            bg = f'style="background-image:url(\'{photo_url}\');background-size:cover;background-position:center;"' if has_photo else f'style="background:{grad};"'
+            bg = f'style="background-image:url(\'{clean_photo_url}\');background-size:cover;background-position:center;"' if clean_photo_url else f'style="background:{grad};"'
             side = "l" if si%2==0 else "r"
             icon, badge = ("🍴","🍴") if is_food else ("📍","🏛")
             name_short = d["name"][:10]+".." if len(d["name"])>10 else d["name"]
@@ -515,11 +528,19 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 
         if daily is not None and daily > 0:
             total_budget = daily * days_n * people_count
-            accommodation_est = int(daily * 0.25)
-            food_est = int(daily * 0.18)
-            transport_est = int(daily * 0.12)
-            ticket_est = int(daily * 0.25)
-            shopping_est = daily - accommodation_est - food_est - transport_est - ticket_est
+            tr_lower = str(transport or "").lower()
+            if any(k in tr_lower for k in ["飞机", "机票", "flight", "航空"]):
+                acc_r, food_r, trans_r, tick_r = 0.25, 0.18, 0.25, 0.17
+            elif any(k in tr_lower for k in ["高铁", "动车", "火车", "train"]):
+                acc_r, food_r, trans_r, tick_r = 0.25, 0.20, 0.18, 0.22
+            else:
+                acc_r, food_r, trans_r, tick_r = 0.28, 0.22, 0.12, 0.23
+
+            accommodation_est = int(daily * acc_r)
+            food_est = int(daily * food_r)
+            transport_est = int(daily * trans_r)
+            ticket_est = int(daily * tick_r)
+            shopping_est = max(0, daily - accommodation_est - food_est - transport_est - ticket_est)
             budget_html = f"""
     <div class="sec bs">
         <h2>💰 预算概览（{days_n}天 · {people_count}人 · 约¥{daily}/天/人）</h2>
@@ -647,7 +668,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 except (ValueError, TypeError):
                     pass
                     
-            _book_btn = f'<a class="btn-booking" href="{_esc(_jt)}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:4px 8px; color:white; border-radius:4px; text-decoration:none; font-size:11px;">✈️ 预定</a>' if _jt else "-"
+            _book_btn = f'<a class="btn-booking" href="{_safe_url(_jt)}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:4px 8px; color:white; border-radius:4px; text-decoration:none; font-size:11px;">✈️ 预定</a>' if _jt else "-"
             
             tr = f"""
             <tr style="border-bottom: 1px solid var(--border2); text-align: left;">
@@ -708,12 +729,12 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     _price_str = f"¥{_esc(str(_price))}/晚"
                 else:
                     _price_str = "暂无报价"
-                _hbtn = f'<a class="btn-booking" href="{_esc(str(_bh.get("jump_url","")))}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
+                _hbtn = f'<a class="btn-booking" href="{_safe_url(_bh.get("jump_url",""))}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
                 tag = f'<span style="background:var(--primary);color:#fff;padding:2px 4px;border-radius:4px;font-size:10px;margin-right:6px;">推荐 {i+1}</span>'
                 _star = _esc(str(_bh.get("star", "星级")))
                 _src = _esc(str(hg.get("source", "飞猪实时")))
                 _dec = _esc(str(_bh.get("decoration_time", "未知")))
-                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_esc(str(_bh.get("main_pic", "")))}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_esc(str(_name))}</div><div class="bi-meta">{_price_str} · {_star} · {_src} · 开业/装修: {_dec}</div></div><div class="bi-action">{_hbtn}</div></div>')
+                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_safe_url(_bh.get("main_pic", ""))}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_esc(str(_name))}</div><div class="bi-meta">{_price_str} · {_star} · {_src} · 开业/装修: {_dec}</div></div><div class="bi-action">{_hbtn}</div></div>')
 
         # 覆盖 LLM 生成的酒店，替换为强化的备选列表
         if hotel_items_html:
@@ -746,7 +767,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                                 <summary style="font-size:11px; font-weight:600; color:#3b82f6;">查看门票详情 ▾</summary>
                                 <div style="margin-top:6px; padding:8px; background:var(--tbg); border-radius:6px; font-size:11px;">
                                     {f'<div style="margin-bottom:6px; color:var(--text2);">🕒 开放时间: {open_hours_esc}</div>' if open_hours else ''}
-                                    {f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><span>🎟️ 门票</span><div><span style="color:#f59e0b; margin-right:8px; font-weight:bold;">¥{_pm}</span><a class="btn-booking" href="{_esc(_bu)}" target="_blank" style="padding:2px 8px;">飞猪预订</a></div></div>' if _pm else ''}
+                                    {f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><span>🎟️ 门票</span><div><span style="color:#f59e0b; margin-right:8px; font-weight:bold;">¥{_pm}</span><a class="btn-booking" href="{_safe_url(_bu)}" target="_blank" style="padding:2px 8px;">飞猪预订</a></div></div>' if _pm else ''}
                                     {f'<div style="margin-top:4px; color:var(--text2); font-size:10px;">{note_text_esc}</div>' if note_text else ''}
                                 </div>
                             </details>

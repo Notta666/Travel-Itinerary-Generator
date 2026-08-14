@@ -1,4 +1,4 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime, logging, math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger("travel_pipeline")
@@ -7,7 +7,24 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from utils.amap_api import AMapClient
-amap = AMapClient()
+
+_amap_inst = None
+
+def get_amap():
+    global _amap_inst
+    if _amap_inst is None:
+        _amap_inst = AMapClient()
+    return _amap_inst
+
+amap = get_amap()
+
+
+def _approx_dist_km(p1, p2):
+    """计算两点近似距离 (km)，经度方向乘以 cos(纬度) 进行准确几何缩放 (P3-5)"""
+    lat_avg = (p1[1] + p2[1]) / 2.0
+    dx = (p1[0] - p2[0]) * 111.0 * math.cos(math.radians(lat_avg))
+    dy = (p1[1] - p2[1]) * 111.0
+    return math.sqrt(dx * dx + dy * dy)
 
 def step_3_geocode(context, manual_pois=None):
     """高德地理编码: 小红书提取的景点名 → 坐标 (批量并行)"""
@@ -69,6 +86,7 @@ def step_3_geocode(context, manual_pois=None):
         except Exception as e:
             print(f"     ⚠️ LLM 城市识别失败: {e}")
 
+    amap = get_amap()
     city_centers = []
     for c in cities_list:
         lookup_c = "佛山" if c == "顺德" else c
@@ -112,7 +130,7 @@ def step_3_geocode(context, manual_pois=None):
                 if coord:
                     c_coord = amap.geocode(lc)
                     if c_coord:
-                        dist = abs(coord[0] - c_coord[0]) * 111 + abs(coord[1] - c_coord[1]) * 111
+                        dist = _approx_dist_km(coord, c_coord)
                         if dist <= 50:
                             return name, coord
 
@@ -137,7 +155,7 @@ def step_3_geocode(context, manual_pois=None):
             if city_centers:
                 is_drift = True
                 for cx, cy in city_centers:
-                    dist = abs(coord[0] - cx) * 111 + abs(coord[1] - cy) * 111
+                    dist = _approx_dist_km(coord, (cx, cy))
                     if dist <= 100:
                         is_drift = False
                         break
@@ -153,7 +171,7 @@ def step_3_geocode(context, manual_pois=None):
                     valid_fallback = False
                     if city_centers:
                         for cx, cy in city_centers:
-                            dist = abs(fallback_coord[0] - cx) * 111 + abs(fallback_coord[1] - cy) * 111
+                            dist = _approx_dist_km(fallback_coord, (cx, cy))
                             if dist <= 100:
                                 valid_fallback = True
                                 break

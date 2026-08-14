@@ -279,7 +279,7 @@ footer{margin-top:20px;padding:22px 0;border-top:1px solid var(--border);text-al
         <button class="btn-ghost" id="dlBtn">⬇️ 下载 HTML</button>
       </div>
     </div>
-    <iframe id="brochureFrame" title="行程手册预览"></iframe>
+    <iframe id="brochureFrame" title="行程手册预览" sandbox="allow-scripts allow-popups allow-forms"></iframe>
   </section>
 
   <footer>Curated by TripGenius · 地理数据 © 高德地图 · 小红书为可选项（缺失时自动降级内置推荐库）</footer>
@@ -427,7 +427,12 @@ function showError(msg){
   var sec=document.getElementById('resultSection');
   var frame=document.getElementById('brochureFrame');
   if(frame && frame.tagName==='IFRAME'){
-    var esc=(msg||'未知错误').replace(/</g,'&lt;');
+    var esc=String(msg||'未知错误')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
     frame.srcdoc='<!DOCTYPE html><html><body style="margin:0;padding:40px;font-family:system-ui,-apple-system,sans-serif;color:#C0392B;font-weight:700;">❌ 生成失败：'+esc+'</body></html>';
   }
   sec.hidden=false;
@@ -438,13 +443,16 @@ document.getElementById('genBtn').addEventListener('click',function(){
   var goal=document.getElementById('goal').value.trim();
   if(!goal){document.getElementById('goal').focus();document.getElementById('liveMsg').textContent='请先描述你的旅行目标';return;}
   var btn=this;btn.disabled=true;btn.textContent='⏳ 生成中…';
+  var hmin=parseInt(document.getElementById('hmin').value,10)||300;
+  var hmax=parseInt(document.getElementById('hmax').value,10)||500;
+  if(hmin>hmax){var tmp=hmin;hmin=hmax;hmax=tmp;document.getElementById('hmin').value=hmin;document.getElementById('hmax').value=hmax;}
   var payload={
     goal:goal,
     days:parseInt(document.getElementById('days').value,10)||null,
     people:parseInt(document.getElementById('people').value,10)||null,
     budget:document.getElementById('budget').value?parseInt(document.getElementById('budget').value,10):null,
-    hotel_budget_min:parseInt(document.getElementById('hmin').value,10)||300,
-    hotel_budget_max:parseInt(document.getElementById('hmax').value,10)||500,
+    hotel_budget_min:hmin,
+    hotel_budget_max:hmax,
     prefs:{start_city:document.getElementById('startCity').value.trim()},
     steps:getSelectedSteps()
   };

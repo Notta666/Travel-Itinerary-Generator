@@ -101,6 +101,7 @@ def step_55_flyai_pricing(context, client=None):
         )
         key = "hotel"
         if items:
+            total_hotel_count = len(items)
             # 酒店按用户选择的预算区间过滤
             if hotel_budget_min or hotel_budget_max:
                 filtered = []
@@ -113,7 +114,7 @@ def step_55_flyai_pricing(context, client=None):
                     filtered.append(item)
                 if filtered:
                     items = filtered
-                    print(f"  🏨 预算过滤: {len(items)}/{len(filtered)} 家在 ¥{hotel_budget_min}~{hotel_budget_max}/晚")
+                    print(f"  🏨 预算过滤: {len(items)}/{total_hotel_count} 家在 ¥{hotel_budget_min}~{hotel_budget_max}/晚")
                 else:
                     print(f"  ⚠️ 无 ¥{hotel_budget_min}~{hotel_budget_max} 酒店，显示全部")
             
@@ -168,8 +169,15 @@ def step_56_transport_decision(context, amap=None):
         return context
 
     if not amap:
-        from utils.amap_api import AMapClient
-        amap = AMapClient()
+        try:
+            from pipeline.run_pipeline import get_amap
+            amap = get_amap()
+        except Exception:
+            try:
+                from utils.amap_api import AMapClient
+                amap = AMapClient()
+            except Exception:
+                amap = None
 
     # 1. 计算实际距离
     start_coord = amap.geocode(start_city)

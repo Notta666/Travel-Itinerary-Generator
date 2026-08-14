@@ -96,30 +96,62 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         print("  ⚠️ 无POI, 跳过")
         return context
 
-    # --- 构建输入数据 ---
+    if amap is None:
+        try:
+            from pipeline.run_pipeline import get_amap
+            amap = get_amap()
+        except Exception:
+            try:
+                from utils.amap_api import AMapClient
+                amap = AMapClient()
+            except Exception:
+                amap = None
+
+    # --- 构建输入数据 (P2-22: 本地清洗去冗余，控制在 ~4000 tokens) ---
     pois_data = []
-    for p in pois:
+    # 最多保留 20 个高优先级 POI，字段截断去冗余
+    for p in pois[:20]:
         loc = p.get("location")
+        comp = str(p.get("complaints", "无"))[:80]
+        high = str(p.get("highlights", "无"))[:80]
         pois_data.append({
             "name": p["name"],
-            "lng": loc[0] if loc else None,
-            "lat": loc[1] if loc else None,
-            "address": p.get("address", ""),
+            "lng": round(loc[0], 4) if loc and len(loc) >= 2 and isinstance(loc[0], (int, float)) else None,
+            "lat": round(loc[1], 4) if loc and len(loc) >= 2 and isinstance(loc[1], (int, float)) else None,
             "district": p.get("district", ""),
-            "complaints": p.get("complaints", "无"),
-            "highlights": p.get("highlights", "无")
+            "complaints": comp,
+            "highlights": high
         })
 
-    food_json = json.dumps([{
-        "name": f["name"], "rating": f.get("rating",""), "cost": f.get("cost",""),
-        "tag": f.get("tag",""), "address": f.get("address",""),
-        "complaints": f.get("complaints", "无"),
-        "highlights": f.get("highlights", "无"),
-        "nearby_pois": f.get("nearby_pois", [])
-    } for f in food_list], ensure_ascii=False, indent=2)
-    input_json = json.dumps({"city": city, "days": days, "pois": pois_data,
-                             "distance_matrix_km": dist_matrix.get("matrix", []),
-                             "labels": dist_matrix.get("labels", [])}, ensure_ascii=False, indent=2)
+    food_clean = []
+    # 最多保留 15 家推荐餐厅，精简字段
+    for f in food_list[:15]:
+        food_clean.append({
+            "name": f["name"],
+            "rating": str(f.get("rating", "")),
+            "cost": str(f.get("cost", "")),
+            "tag": f.get("tag", ""),
+            "complaints": str(f.get("complaints", "无"))[:60],
+            "highlights": str(f.get("highlights", "无"))[:60],
+            "nearby_pois": f.get("nearby_pois", [])[:3]
+        })
+    food_json = json.dumps(food_clean, ensure_ascii=False)
+
+    # 紧凑版距离矩阵
+    dist_labels = dist_matrix.get("labels", [])[:len(pois_data)]
+    raw_mat = dist_matrix.get("matrix", [])
+    compact_mat = []
+    if raw_mat and len(raw_mat) >= len(dist_labels):
+        for row in raw_mat[:len(dist_labels)]:
+            compact_mat.append([round(x, 1) if isinstance(x, (int, float)) else 0 for x in row[:len(dist_labels)]])
+
+    input_json = json.dumps({
+        "city": city,
+        "days": days,
+        "pois": pois_data,
+        "distance_matrix_km": compact_mat,
+        "labels": dist_labels
+    }, ensure_ascii=False)
 
     lodging_instruction = _build_lodging_instruction(context)
 
@@ -401,15 +433,8 @@ Bear悠闲避雷方案摘要: {bear_summary}
                     except (ValueError, TypeError, IndexError):
                         pass
 
-    # 城市中心坐标（用于验证合理性，支持多城）
+    # 城市列表（支持多城）
     cities_list = [c.strip() for c in re.split(r"[+,，]", city) if c.strip()]
-    city_centers = []
-    for c in cities_list:
-        c_coord = amap.geocode(c) if amap else None
-        if c_coord:
-            city_centers.append(list(c_coord))
-    if not city_centers:
-        city_centers = [[121.47, 31.23]]
 
     itinerary = []
     seen_sights = set()
@@ -428,7 +453,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
                     if ep.get("name") == s_name and ep.get("location"):
                         day_sight_coords.append(ep["location"])
                         break
-        # 数据诚信：优先用当天已解析景点的真实坐标做就近回退；无可用真实坐标时回退为 None（不伪造）
+        # 数据诚信：景点优先用当天已解析景点的真实坐标做就近回退；无可用真实坐标时回退为 None（不伪造）
         fallback_coord = day_sight_coords[0] if day_sight_coords else None
 
         for s in d.get("slots", []):
@@ -465,17 +490,25 @@ Bear悠闲避雷方案摘要: {bear_summary}
                 try:
                     q_city = slot_city or (cities_list[0] if cities_list else "")
                     q_name = f"{q_city}{name}" if q_city and q_city not in name else name
-                    coord = amap.geocode(q_name, q_city)
+                    coord = amap.geocode(q_name, q_city) if amap else None
                     if coord:
-                        c_coord = amap.geocode(q_city)
+                        c_coord = amap.geocode(q_city) if amap else None
                         if c_coord:
                             _dist = abs(coord[0]-c_coord[0])*111 + abs(coord[1]-c_coord[1])*111
                             if _dist < 50:
                                 matched = {"location": list(coord)}
+                        else:
+                            matched = {"location": list(coord)}
                 except Exception:
                     pass
 
-            loc = matched["location"] if matched else fallback_coord
+            # P3-16: 餐厅坐标防扎堆，未匹配优先 amap.geocode 兜底，仍无则为 None（不落到首景）
+            if matched:
+                loc = matched.get("location")
+            elif s_type != "food":
+                loc = fallback_coord
+            else:
+                loc = None
             entry = {
                 "name": name,
                 "location": list(loc) if loc else None,
