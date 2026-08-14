@@ -7,13 +7,15 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     from pipeline.steps.init import step_1_init
     
     context = step_1_init(city, days, preferences=prefs, manual_pois=manual_pois, multi_cities=multi_cities_list)
+    if days < len(multi_cities_list):
+        raise ValueError(f"总天数 ({days}) 不能少于城市数 ({len(multi_cities_list)})")
     days_per_city = days // len(multi_cities_list)
     rem = days % len(multi_cities_list)
 
     city_contexts = {}
     combined_itinerary = []
     combined_food_highlights = []
-    combined_overall_note = "【多城市串联路线规划】\\n"
+    combined_overall_note = "【多城市串联路线规划】\n"
     
     current_date = context.get("start_date") or datetime.date.today().strftime("%Y-%m-%d")
 
@@ -21,7 +23,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         if cancel_event and cancel_event.is_set():
             raise Exception("Pipeline cancelled")
             
-        c_days = days_per_city + (rem if idx == 0 else 0)
+        c_days = days_per_city + (1 if idx < rem else 0)
         c_prefs = copy.deepcopy(prefs)
         c_prefs["multi_cities"] = []
         c_prefs["start_date"] = current_date
@@ -29,7 +31,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         if idx > 0:
             c_prefs["start_city"] = multi_cities_list[idx - 1]
         
-        print(f"\\n🗺️ [多城市模式] 正在为城市 {c} ({idx+1}/{len(multi_cities_list)}) 生成行程，天数: {c_days}天，开始日期: {current_date}")
+        print(f"\n🗺️ [多城市模式] 正在为城市 {c} ({idx+1}/{len(multi_cities_list)}) 生成行程，天数: {c_days}天，开始日期: {current_date}")
         
         sub_ctx = pipeline_func(
             city=c, days=c_days, use_research=use_research,
@@ -50,7 +52,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     for idx, c in enumerate(multi_cities_list):
         sub_ctx = city_contexts[c]
         sub_itinerary = sub_ctx.get("itinerary") or []
-        c_days = days_per_city + (rem if idx == 0 else 0)
+        c_days = days_per_city + (1 if idx < rem else 0)
         
         for item in sub_itinerary:
             new_item = copy.deepcopy(item)
@@ -59,8 +61,8 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
             new_item["day"] = new_day
             
             if "label" in new_item:
-                label_clean = re.sub(r"^Day \\d+:\\s*", "", new_item["label"])
-                label_clean = re.sub(r"^Day \\d+\\s*", "", label_clean)
+                label_clean = re.sub(r"^Day \d+:\s*", "", new_item["label"])
+                label_clean = re.sub(r"^Day \d+\s*", "", label_clean)
                 new_item["label"] = f"Day {new_day}: {label_clean}"
             
             new_item["accommodation_city"] = c
@@ -79,14 +81,14 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
                 combined_food_highlights.append(fh)
         
         if sub_ctx.get("overall_note"):
-            combined_overall_note += f"\\n### {c} 规划说明\\n{sub_ctx['overall_note']}\\n"
+            combined_overall_note += f"\n### {c} 规划说明\n{sub_ctx['overall_note']}\n"
 
     combined_flyai = {"available": False, "tickets": {}, "transport_legs": []}
     
     # Calculate days for each city's starting leg
     leg_start_day = 1
     for idx, c in enumerate(multi_cities_list):
-        c_days = days_per_city + (rem if idx == 0 else 0)
+        c_days = days_per_city + (1 if idx < rem else 0)
         sub_flyai = city_contexts[c].get("flyai_prices", {})
         if sub_flyai.get("available"):
             combined_flyai["available"] = True
@@ -121,7 +123,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
                     combined_flyai["hotel"]["items"].extend(sub_flyai["hotel"]["items"])
                     all_hotels = combined_flyai["hotel"]["items"]
                     if all_hotels:
-                        combined_flyai["hotel"]["cheapest"] = min(all_hotels, key=lambda x: x["price"])["price"]
+                        combined_flyai["hotel"]["cheapest"] = min(all_hotels, key=lambda x: x.get("price", float('inf'))).get("price")
                         combined_flyai["hotel"]["count"] = len(all_hotels)
         
         leg_start_day += c_days

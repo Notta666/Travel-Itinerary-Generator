@@ -36,6 +36,40 @@ _init_db()
 _TASK_SEM = threading.Semaphore(3)
 VALID_STEPS = {"research", "enrich", "distance", "flyai", "tips"}
 
+_rate_limit_lock = threading.Lock()
+_ip_request_records = {}  # ip -> list of timestamps
+
+
+def _verify_api_token(request: Request):
+    """If API_TOKEN is configured in environment, require and verify token in headers/query."""
+    expected_token = os.environ.get("API_TOKEN", "").strip()
+    if not expected_token:
+        return  # No token required by default
+    auth_header = request.headers.get("Authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif "x-api-key" in request.headers:
+        token = request.headers.get("x-api-key", "").strip()
+    elif "token" in request.query_params:
+        token = request.query_params.get("token", "").strip()
+    
+    if not token or token != expected_token:
+        raise HTTPException(401, "API Token 无效或未提供")
+
+
+def _check_rate_limit(request: Request, max_per_minute=10):
+    """Simple in-memory rate limiting per client IP."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = asyncio.get_event_loop().time() if False else threading.time.time() if hasattr(threading, "time") else __import__("time").time()
+    with _rate_limit_lock:
+        timestamps = _ip_request_records.get(client_ip, [])
+        timestamps = [t for t in timestamps if now - t < 60]
+        if len(timestamps) >= max_per_minute:
+            raise HTTPException(429, "请求频率过高，每分钟最多允许 10 次生成请求")
+        timestamps.append(now)
+        _ip_request_records[client_ip] = timestamps
+
 
 class GenerateRequest(BaseModel):
     goal: str = Field(..., max_length=500)
@@ -66,8 +100,11 @@ async def check_opencli_route():
 
 
 @app.post("/generate")
-async def generate(data: GenerateRequest):
+async def generate(data: GenerateRequest, request: Request):
     """Submit a generation task."""
+    _verify_api_token(request)
+    _check_rate_limit(request)
+
     from utils.research import check_opencli_status
     # 小红书调研为可选项：未连接 OpenCLI 时降级为内置推荐库，不再硬拒（与 CLI 行为一致）
     ok, check_msg, details = check_opencli_status()
@@ -114,8 +151,11 @@ async def generate(data: GenerateRequest):
     return {"task_id": task_id, "status": "pending"}
 
 
-# Register the imported cancel_task function as a FastAPI POST route
-app.post("/cancel/{task_id}")(cancel_task)
+@app.post("/cancel/{task_id}")
+async def cancel_task_endpoint(task_id: str, request: Request):
+    """Cancel task with optional API_TOKEN check."""
+    _verify_api_token(request)
+    return await cancel_task(task_id)
 
 
 @app.get("/status/{task_id}")

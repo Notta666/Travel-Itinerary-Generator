@@ -9,7 +9,7 @@ if PROJECT_ROOT not in sys.path:
 from utils.amap_api import AMapClient
 amap = AMapClient()
 
-def step_55_flyai_pricing(context):
+def step_55_flyai_pricing(context, client=None):
     """飞猪 FlyAI 实时机票/高铁/酒店价格查询（并行）
 
     数据写入 context["flyai_prices"]:
@@ -22,21 +22,22 @@ def step_55_flyai_pricing(context):
     print(f"Step 5.5/9: 飞猪 FlyAI 实时物价查询 ✈️🚄🏨")
     print(f"{'='*50}")
 
-    try:
-        from utils.flyai_api import FlyAIApiClient
-        client = FlyAIApiClient()
-        if not client.check_environment():
-            print("  ⚠️ FlyAI CLI 不可用，跳过实时物价查询")
+    if client is None:
+        try:
+            from utils.flyai_api import FlyAIApiClient
+            client = FlyAIApiClient()
+            if not client.check_environment():
+                print("  ⚠️ FlyAI CLI 不可用，跳过实时物价查询")
+                context["flyai_prices"] = {"available": False}
+                return context
+        except ImportError:
+            print("  ⚠️ utils.flyai_api 未安装，跳过实时物价查询")
             context["flyai_prices"] = {"available": False}
             return context
-    except ImportError:
-        print("  ⚠️ utils.flyai_api 未安装，跳过实时物价查询")
-        context["flyai_prices"] = {"available": False}
-        return context
-    except Exception as e:
-        print(f"  ⚠️ FlyAI 初始化失败: {e}")
-        context["flyai_prices"] = {"available": False}
-        return context
+        except Exception as e:
+            print(f"  ⚠️ FlyAI 初始化失败: {e}")
+            context["flyai_prices"] = {"available": False}
+            return context
 
     city = context["city"]
     prefs = context.get("preferences", {})
@@ -54,6 +55,8 @@ def step_55_flyai_pricing(context):
         return context
 
     from datetime import datetime, timedelta
+    dep_date = None
+    ret_date = ""
     try:
         dep_date = datetime.strptime(start_date, "%Y-%m-%d")
         ret_date = (dep_date + timedelta(days=days)).strftime("%Y-%m-%d")
@@ -78,12 +81,13 @@ def step_55_flyai_pricing(context):
 
             if key:
                 if items:
-                    cheapest = min(items, key=lambda x: x["price"])
+                    cheapest = min(items, key=lambda x: x.get("price", float('inf')))
+                    ch_price = cheapest.get("price")
                     results[key] = {
                         "items": items, "source": source,
-                        "cheapest": cheapest["price"], "count": len(items)
+                        "cheapest": ch_price, "count": len(items)
                     }
-                    print(f"  ✅ {key}: 查询成功, 最低价 ¥{cheapest['price']}")
+                    print(f"  ✅ {key}: 查询成功, 最低价 ¥{ch_price}")
                 else:
                     results[key] = {"items": [], "source": source, "cheapest": None, "count": 0}
                     print(f"  ⚠️ {key}: 查询无数据/失败")
@@ -115,10 +119,11 @@ def step_55_flyai_pricing(context):
                 else:
                     print(f"  ⚠️ 无 ¥{hotel_budget_min}~{hotel_budget_max} 酒店，显示全部")
             
-            cheapest = min(items, key=lambda x: x["price"])
+            cheapest = min(items, key=lambda x: x.get("price", float('inf')))
+            ch_price = cheapest.get("price")
             results[key] = {
                 "items": items, "source": source,
-                "cheapest": cheapest["price"], "count": len(items)
+                "cheapest": ch_price, "count": len(items)
             }
             # 调试：记录酒店 API 返回的可选字段质量
             h0 = items[0]
@@ -255,7 +260,8 @@ def step_56_transport_decision(context, amap=None):
                         fc = FlyAIApiClient()
                         items, src = fc.query_flight(start_city, city, context.get("start_date", ""))
                         if items:
-                            flyai["flight"] = {"items": items, "source": src, "cheapest": items[0]["price"], "count": len(items)}
+                            ch_flight = min(items, key=lambda x: x.get("price", float('inf'))).get("price")
+                            flyai["flight"] = {"items": items, "source": src, "cheapest": ch_flight, "count": len(items)}
                             context["flyai_prices"] = flyai
                     elif new_transport == "高铁" and not flyai.get("train", {}).get("items"):
                         print(f"  🔄 追加查询高铁价格...")
@@ -263,7 +269,8 @@ def step_56_transport_decision(context, amap=None):
                         fc = FlyAIApiClient()
                         items, src = fc.query_train(start_city, city, context.get("start_date", ""))
                         if items:
-                            flyai["train"] = {"items": items, "source": src, "cheapest": items[0]["price"], "count": len(items)}
+                            ch_train = min(items, key=lambda x: x.get("price", float('inf'))).get("price")
+                            flyai["train"] = {"items": items, "source": src, "cheapest": ch_train, "count": len(items)}
                             context["flyai_prices"] = flyai
             else:
                 print(f"  ⚠️ LLM 返回异常交通方式: {new_transport}，保留原值")

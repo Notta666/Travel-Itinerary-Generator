@@ -1,5 +1,11 @@
 import os
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Project root path
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -21,10 +27,10 @@ os.makedirs(OUTPUTS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # CORS origins (environment configurable for security)
-# Default: localhost only. Set to "*" to allow all origins (development only)
+# Default: localhost only. Set CORS_ORIGINS="*" and CORS_ALLOW_ALL="1" to allow all origins (development only)
 # Format: comma-separated list, e.g. "http://localhost:8080,http://127.0.0.1:8080"
 _CORS_ENV = os.environ.get("CORS_ORIGINS", "")
-if _CORS_ENV == "*":
+if _CORS_ENV == "*" and os.environ.get("CORS_ALLOW_ALL") == "1":
     CORS_ORIGINS = ["*"]
 elif _CORS_ENV and _CORS_ENV != "*":
     CORS_ORIGINS = [o.strip() for o in _CORS_ENV.split(",") if o.strip()]

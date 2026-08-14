@@ -6,7 +6,7 @@ import os, json, time
 from pathlib import Path
 
 try:
-    from jinja2 import Environment, FileSystemLoader
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
     HAS_JINJA2 = True
 except ImportError:
     HAS_JINJA2 = False
@@ -18,7 +18,7 @@ def _get_env():
     """Get the Jinja2 environment, caching the template loader."""
     return Environment(
         loader=FileSystemLoader(str(_TEMPLATE_DIR)),
-        autoescape=False,  # We render trusted HTML content
+        autoescape=select_autoescape(["html", "htm"]),
     )
 
 

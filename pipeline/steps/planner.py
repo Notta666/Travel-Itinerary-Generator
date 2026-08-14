@@ -325,11 +325,12 @@ Bear悠闲避雷方案摘要: {bear_summary}
         food_highlights = [f["name"] for f in food_list[:3]] if food_list else []
 
         # 简单均分景点到每一天
-        pois_per_day = max(1, len(pois) // days)
-        for d in range(1, days + 1):
+        days_safe = max(1, days)
+        pois_per_day = max(1, len(pois) // days_safe)
+        for d in range(1, days_safe + 1):
             day_slots = []
             start_idx = (d - 1) * pois_per_day
-            end_idx = start_idx + pois_per_day if d < days else len(pois)
+            end_idx = start_idx + pois_per_day if d < days_safe else len(pois)
             day_pois = pois[start_idx:end_idx]
 
             for idx, p in enumerate(day_pois):

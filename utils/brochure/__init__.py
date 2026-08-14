@@ -9,6 +9,11 @@ from utils.config import AMAP_KEY, BASE_DIR
 # HTML 转义辅助：所有注入进手册 HTML 的外部/LLM 派生文本必须经此转义，防 XSS
 _esc = html.escape
 
+def _js_json(obj):
+    """Serialize object to JSON safe for embedding in <script> tag (neutralizes </)."""
+    return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+
+
 logger = logging.getLogger("travel_pipeline")
 _photo_cache = {}
 _last_fetch_time = 0
@@ -298,31 +303,31 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 if not cost_val or cost_val == "?" or cost_val == "[]":
                     cost_display = "暂无报价"
                 cost_class = "hpr"
-                rating_val = h.get("rating", "")
+                rating_val = str(h.get("rating", ""))
                 rating_display = rating_val if rating_val and rating_val != "?" else "--"
-                dist_val = h.get("distance", "")
+                dist_val = str(h.get("distance", ""))
                 dist_display = f"{dist_val}m" if dist_val else ""
-                tel_val = h.get("tel", "")
-                tel_html = f'<span class="htel">📞 {tel_val}</span>' if tel_val else ""
+                tel_val = str(h.get("tel", ""))
+                tel_html = f'<span class="htel">📞 {_esc(tel_val)}</span>' if tel_val else ""
                 selected_class = "selected" if hi == 0 else ""
                 
                 # 酒店主图
-                pic_html = f'<img class="hpic" src="{main_pic}" alt="" onerror="this.style.display=\'none\'">' if main_pic else ""
+                pic_html = f'<img class="hpic" src="{_esc(str(main_pic))}" alt="" onerror="this.style.display=\'none\'">' if main_pic else ""
                 
                 is_selected = (hi == 0)
                 label_tag = "首选" if is_selected else f"备选{hi}"
                 # 飞猪预订链接兜底
-                burl = f"https://hotel.fliggy.com/hotel_detail2.htm?keywords={urllib.parse.quote(h['name'])}"
-                book_btn = f'<a class="btn-book" href="{burl}" target="_blank" onclick="event.stopPropagation()" style="margin-left:auto; padding:4px 10px; font-size:11px;">飞猪预订</a>'
+                burl = f"https://hotel.fliggy.com/hotel_detail2.htm?keywords={urllib.parse.quote(str(h.get('name', '')))}"
+                book_btn = f'<a class="btn-book" href="{_esc(burl)}" target="_blank" onclick="event.stopPropagation()" style="margin-left:auto; padding:4px 10px; font-size:11px;">飞猪预订</a>'
                 
                 hc += (
                     f'<div class="hc {selected_class}" data-day="{day_num}" data-idx="{hi}" onclick="selectHotel({day_num},{hi})">'
                     f'<div class="hc-check">{"✓" if hi == 0 else ""}</div>'
                     f'{pic_html}'
                     f'<div class="hc-info">'
-                    f'<div class="hc-row1"><span class="hn"><span class="hdy">{label_tag}</span> {_esc(h["name"])}</span><span class="hsg">⭐{rating_display}</span></div>'
-                    f'<div class="hc-row2"><span class="{cost_class}">{cost_display}</span>'
-                    f'{f"<span class=hdi>{dist_display}</span>" if dist_display else ""}'
+                    f'<div class="hc-row1"><span class="hn"><span class="hdy">{label_tag}</span> {_esc(str(h.get("name", "")))}</span><span class="hsg">⭐{_esc(rating_display)}</span></div>'
+                    f'<div class="hc-row2"><span class="{cost_class}">{_esc(cost_display)}</span>'
+                    f'{f"<span class=hdi>{_esc(dist_display)}</span>" if dist_display else ""}'
                     f'{tel_html}{book_btn}</div>'
                     f'</div>'
                     f'</div>'
@@ -359,10 +364,10 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     r = float(d["rating"])
                 except (ValueError, TypeError):
                     r = 0
-                tags.append(f'<span class="t {"g" if r>=4 else "m"}">★ {d["rating"]}</span>')
-            if d.get("cost"): tags.append(f'<span class="t b">{d["cost"]}</span>')
-            if is_food and d.get("cuisine"): tags.append(f'<span class="t o">🍳 {d["cuisine"]}</span>')
-            if d.get("time_slot"): tags.append(f'<span class="t ti">🕐 {d["time_slot"]}</span>')
+                tags.append(f'<span class="t {"g" if r>=4 else "m"}">★ {_esc(str(d["rating"]))}</span>')
+            if d.get("cost"): tags.append(f'<span class="t b">{_esc(str(d["cost"]))}</span>')
+            if is_food and d.get("cuisine"): tags.append(f'<span class="t o">🍳 {_esc(str(d["cuisine"]))}</span>')
+            if d.get("time_slot"): tags.append(f'<span class="t ti">🕐 {_esc(str(d["time_slot"]))}</span>')
             transit_text = d.get("transit", "")
             if transit_text:
                 if "步行" in transit_text or "走" in transit_text:
@@ -377,7 +382,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     t_icon = "🏁"
                 else:
                     t_icon = "🚗"
-                tags.append(f'<span class="t tr">{t_icon} {transit_text}</span>')
+                tags.append(f'<span class="t tr">{t_icon} {_esc(str(transit_text))}</span>')
             if not d_loc:
                 tags.append('<span class="t tr">📍 位置待核实</span>')
             overlay = f'<div class="po">{_esc(name_short)}</div>' if not has_photo else ""
@@ -413,7 +418,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             <div class="ccont">{day_html}</div>
         </div>""")
 
-    map_items_json = json.dumps(all_items_flat, ensure_ascii=False).replace("</", "<\\/")
+    map_items_json = _js_json(all_items_flat)
 
     thtml = ""
     if tips:
@@ -423,15 +428,15 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         emergency = tips.get("emergency", "")
         items = []
         for g in general[:5]:
-            items.append(f'<li>{g}</li>')
+            items.append(f'<li>{_esc(str(g))}</li>')
         if pref_tips:
             for p in pref_tips[:3]:
-                items.append(f'<li class="pt">🎯 {p}</li>')
+                items.append(f'<li class="pt">🎯 {_esc(str(p))}</li>')
         if daily:
             for d in daily[:3]:
-                items.append(f'<li class="tip-day">📅 {d}</li>')
+                items.append(f'<li class="tip-day">📅 {_esc(str(d))}</li>')
         if emergency:
-            items.append(f'<li class="em">⚠️ {emergency}</li>')
+            items.append(f'<li class="em">⚠️ {_esc(str(emergency))}</li>')
         if items:
             thtml = f"""
     <div class="sec ts">
@@ -445,13 +450,17 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         wx_suggestions = weather.get("suggestions", [])
         cards = ""
         for d in forecast[:3]:
-            cards += f'<div class="wf"><div class="wd">{d["date"][5:]}</div><div class="ww">{d["day_weather"]}</div><div class="wt">{d["temp_range"]}</div></div>'
+            d_date = _esc(str(d.get("date", ""))[5:])
+            d_weather = _esc(str(d.get("day_weather", "")))
+            d_temp = _esc(str(d.get("temp_range", "")))
+            cards += f'<div class="wf"><div class="wd">{d_date}</div><div class="ww">{d_weather}</div><div class="wt">{d_temp}</div></div>'
         wx_sug = ""
         for s in wx_suggestions[:3]:
-            wx_sug += f'<div class="ws">{s}</div>'
+            wx_sug += f'<div class="ws">{_esc(str(s))}</div>'
+        w_city = _esc(str(weather.get("city", "")))
         whtml = f"""
     <div class="sec wx">
-        <h2>🌤️ {weather["city"]} 天气预报</h2>
+        <h2>🌤️ {w_city} 天气预报</h2>
         <div class="wf-row">{cards}</div>
         <div class="ws-row">{wx_sug}</div>
     </div>"""
@@ -510,7 +519,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             <div class="bi"><div class="bn">🚗 交通</div><div class="bv">¥{transport_est*days_n*people_count}</div><div class="bp">{(transport_est/daily*100):.0f}%</div><div class="bb" style="width:{(transport_est/daily*100):.0f}%"></div></div>
             <div class="bi"><div class="bn">🛍️ 其他</div><div class="bv">¥{shopping_est*days_n*people_count}</div><div class="bp">{(shopping_est/daily*100):.0f}%</div><div class="bb" style="width:{(shopping_est/daily*100):.0f}%"></div></div>
         </div>
-        <div class="bt">预算合计 ≈ ¥{total_budget}（{transport or '出行方式'} · {people_count}人）</div>
+        <div class="bt">预算合计 ≈ ¥{total_budget}（{_esc(str(transport or '出行方式'))} · {people_count}人）</div>
     </div>"""
         else:
             budget_html = f"""
@@ -521,16 +530,16 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 
     fh_html = ""
     if food_highlights:
-        chips = "".join(f'<div class="fc">{h}</div>' for h in food_highlights[:6])
+        chips = "".join(f'<div class="fc">{_esc(str(h))}</div>' for h in food_highlights[:6])
         fh_html = f'<div class="sec fh"><h2>🏆 必吃推荐</h2><div class="fg">{chips}</div></div>'
 
     tg_parts = []
     if start_city:
-        tg_parts.append(f'📍 起点：{start_city}')
+        tg_parts.append(f'📍 起点：{_esc(str(start_city))}')
     if accommodation:
-        tg_parts.append(f'🏠 住宿：{accommodation}')
+        tg_parts.append(f'🏠 住宿：{_esc(str(accommodation))}')
     if transport:
-        tg_parts.append(f'🚗 交通：{transport}')
+        tg_parts.append(f'🚗 {_esc(str(transport))}')
     if not tg_parts:
         tg_parts = ['各景点间交通便利，地铁/步行可达']
     tg_html = f"""
@@ -627,16 +636,16 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 except (ValueError, TypeError):
                     pass
                     
-            _book_btn = f'<a class="btn-booking" href="{_jt}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:4px 8px; color:white; border-radius:4px; text-decoration:none; font-size:11px;">✈️ 预定</a>' if _jt else "-"
+            _book_btn = f'<a class="btn-booking" href="{_esc(_jt)}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:4px 8px; color:white; border-radius:4px; text-decoration:none; font-size:11px;">✈️ 预定</a>' if _jt else "-"
             
             tr = f"""
             <tr style="border-bottom: 1px solid var(--border2); text-align: left;">
-                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{day_str}</td>
-                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{_dep_time}</td>
-                <td style="padding: 10px 8px; color: var(--text2);">{dep_city}</td>
-                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{_arr_time}</td>
-                <td style="padding: 10px 8px; color: var(--text2);">{arr_city}</td>
-                <td style="padding: 10px 8px; color: var(--text1);">{_method}</td>
+                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{_esc(str(day_str))}</td>
+                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{_esc(str(_dep_time))}</td>
+                <td style="padding: 10px 8px; color: var(--text2);">{_esc(str(dep_city))}</td>
+                <td style="padding: 10px 8px; color: var(--text1); font-weight: 500;">{_esc(str(_arr_time))}</td>
+                <td style="padding: 10px 8px; color: var(--text2);">{_esc(str(arr_city))}</td>
+                <td style="padding: 10px 8px; color: var(--text1);">{_esc(str(_method))}</td>
                 <td style="padding: 10px 8px;">{_book_btn}</td>
             </tr>"""
             transport_rows.append(tr)
@@ -678,19 +687,22 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         for hg in hotel_groups:
             c = hg["city"]
             hlist = hg["items"]
-            hotel_items_html.append(f'<h3 style="font-size:14px; margin: 10px 0 5px; color: var(--text1);">📍 {c} 住宿备选</h3>')
+            hotel_items_html.append(f'<h3 style="font-size:14px; margin: 10px 0 5px; color: var(--text1);">📍 {_esc(str(c))} 住宿备选</h3>')
             for i, _bh in enumerate(hlist):
                 _name = _bh.get("name", "酒店")
                 _price = _bh.get("price")
                 if isinstance(_price, (int, float)):
                     _price_str = f"¥{_price:.0f}/晚"
                 elif _price:
-                    _price_str = f"¥{_price}/晚"
+                    _price_str = f"¥{_esc(str(_price))}/晚"
                 else:
                     _price_str = "暂无报价"
-                _hbtn = f'<a class="btn-booking" href="{_bh.get("jump_url","")}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
+                _hbtn = f'<a class="btn-booking" href="{_esc(str(_bh.get("jump_url","")))}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#f97316,#ea580c)">🏨 预订</a>' if _bh.get("jump_url") else ""
                 tag = f'<span style="background:var(--primary);color:#fff;padding:2px 4px;border-radius:4px;font-size:10px;margin-right:6px;">推荐 {i+1}</span>'
-                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_bh.get("main_pic", "")}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_esc(_name)}</div><div class="bi-meta">{_price_str} · {_bh.get("star", "星级")} · {hg.get("source", "飞猪实时")} · 开业/装修: {_bh.get("decoration_time", "未知")}</div></div><div class="bi-action">{_hbtn}</div></div>')
+                _star = _esc(str(_bh.get("star", "星级")))
+                _src = _esc(str(hg.get("source", "飞猪实时")))
+                _dec = _esc(str(_bh.get("decoration_time", "未知")))
+                hotel_items_html.append(f'<div class="bi-row"><div class="bi-icon" style="overflow:hidden; border-radius:8px;"><img src="{_esc(str(_bh.get("main_pic", "")))}" style="width:100%; height:100%; object-fit:cover;"></div><div class="bi-info"><div class="bi-name">{tag}{_esc(str(_name))}</div><div class="bi-meta">{_price_str} · {_star} · {_src} · 开业/装修: {_dec}</div></div><div class="bi-action">{_hbtn}</div></div>')
 
         # 覆盖 LLM 生成的酒店，替换为强化的备选列表
         if hotel_items_html:
@@ -713,6 +725,8 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                             # 开放时间与门票详情（仅当飞猪返回真实数据时显示）
                             open_hours = _tdi.get("open_hours", "")
                             note_text = _tdi.get("note", "")
+                            open_hours_esc = _esc(str(open_hours))
+                            note_text_esc = _esc(str(note_text))
                             
                             ticket_details = ""
                             if open_hours or _pm:
@@ -720,13 +734,13 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                             <details style="margin-top:6px; cursor:pointer;">
                                 <summary style="font-size:11px; font-weight:600; color:#3b82f6;">查看门票详情 ▾</summary>
                                 <div style="margin-top:6px; padding:8px; background:var(--tbg); border-radius:6px; font-size:11px;">
-                                    {f'<div style="margin-bottom:6px; color:var(--text2);">🕒 开放时间: {open_hours}</div>' if open_hours else ''}
-                                    {f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><span>🎟️ 门票</span><div><span style="color:#f59e0b; margin-right:8px; font-weight:bold;">¥{_pm}</span><a class="btn-booking" href="{_bu}" target="_blank" style="padding:2px 8px;">飞猪预订</a></div></div>' if _pm else ''}
-                                    {f'<div style="margin-top:4px; color:var(--text2); font-size:10px;">{note_text}</div>' if note_text else ''}
+                                    {f'<div style="margin-bottom:6px; color:var(--text2);">🕒 开放时间: {open_hours_esc}</div>' if open_hours else ''}
+                                    {f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><span>🎟️ 门票</span><div><span style="color:#f59e0b; margin-right:8px; font-weight:bold;">¥{_pm}</span><a class="btn-booking" href="{_esc(_bu)}" target="_blank" style="padding:2px 8px;">飞猪预订</a></div></div>' if _pm else ''}
+                                    {f'<div style="margin-top:4px; color:var(--text2); font-size:10px;">{note_text_esc}</div>' if note_text else ''}
                                 </div>
                             </details>
                             """
-                            ticket_items.append(f'<div class="bi-row" style="flex-direction:column; align-items:stretch;"><div style="display:flex; gap:12px; align-items:center;"><div class="bi-icon">🎫</div><div class="bi-info"><div class="bi-name">{_esc(_n)}</div></div></div>{ticket_details}</div>')
+                            ticket_items.append(f'<div class="bi-row" style="flex-direction:column; align-items:stretch;"><div style="display:flex; gap:12px; align-items:center;"><div class="bi-icon">🎫</div><div class="bi-info"><div class="bi-name">{_esc(str(_n))}</div></div></div>{ticket_details}</div>')
         
         if ticket_items:
             tickets_html = f"""
@@ -739,11 +753,11 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
 
     cover_extra = []
     if "+" in city:
-        cover_extra.append(f"🗺️ {city.replace('+', '→')}")
-    if start_city: cover_extra.append(f'📍 起点：{start_city}')
-    if transport: cover_extra.append(f'🚗 {transport}')
-    if budget: cover_extra.append(f'💰 {budget}')
-    if preference: cover_extra.append(f'🎯 {preference}')
+        cover_extra.append(f"🗺️ {_esc(city.replace('+', '→'))}")
+    if start_city: cover_extra.append(f'📍 起点：{_esc(str(start_city))}')
+    if transport: cover_extra.append(f'🚗 {_esc(str(transport))}')
+    if budget: cover_extra.append(f'💰 {_esc(str(budget))}')
+    if preference: cover_extra.append(f'🎯 {_esc(str(preference))}')
     cover_extra_html = ' · '.join(cover_extra)
 
     day_map_labels = [{"day": day["day"]} for day in itinerary]
@@ -765,7 +779,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         transport_html=tg_html,
         day_map_labels=day_map_labels,
         map_items_json=map_items_json,
-        all_hotels_json=json.dumps(all_hotels_data, ensure_ascii=False),
+        all_hotels_json=_js_json(all_hotels_data).replace("</", "<\\/"),
         research_source=research_source,
         generated_ts=ts,
     )

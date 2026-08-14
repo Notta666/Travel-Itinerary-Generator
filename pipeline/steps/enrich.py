@@ -182,11 +182,13 @@ def step_4_enrich(context):
                             nearby_pois.append({"poi": poi["name"], "distance_m": int(dist)})
             if not nearby_pois and coord and enriched:
                 # 没找到2km内的，取最近的POI
-                best = min(
+                candidates = [
                     (abs(coord[0]-p["location"][0])*111000*0.85 + abs(coord[1]-p["location"][1])*111000, p["name"])
-                    for p in enriched if p["location"] and len(p["location"]) >= 2
-                )
-                nearby_pois.append({"poi": best[1], "distance_m": int(best[0])})
+                    for p in enriched if p.get("location") and len(p["location"]) >= 2
+                ]
+                if candidates:
+                    best = min(candidates)
+                    nearby_pois.append({"poi": best[1], "distance_m": int(best[0])})
             nearby_pois.sort(key=lambda x: x["distance_m"])
 
             all_food.append({

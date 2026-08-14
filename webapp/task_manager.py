@@ -64,13 +64,32 @@ def _run_pipeline_task(task_id, goal_text, enabled_steps=None, people=None, budg
     """Run the pipeline in a background thread with SSE progress."""
     try:
         from pipeline.run_pipeline import _parse_goal, run_pipeline
-        _update_task(task_id, status="running", progress="[]")
+        import time
+        from webapp.db import _get_db, _db_write_lock
+
+        # CAS 原子更新：仅当 status 为 pending 时推进至 running，防止覆盖已发生的 cancel
+        with _db_write_lock:
+            conn = _get_db()
+            try:
+                cur = conn.execute(
+                    "UPDATE tasks SET status='running', progress='[]', updated=? WHERE id=? AND status='pending'",
+                    (time.time(), task_id),
+                )
+                conn.commit()
+                rows_affected = cur.rowcount
+            finally:
+                conn.close()
+
+        if rows_affected == 0:
+            task_info = get_task(task_id)
+            if task_info and task_info.get("status") == "cancelled":
+                logger.info(f"任务 {task_id} 启动前已被取消，直接退出执行。")
+                return
 
         # Register cancel flag
         with _cancel_lock:
             cancel_evt = threading.Event()
             _cancel_flags[task_id] = cancel_evt
-            import time
             _task_start_times[task_id] = time.time()
 
         # 注册后复查 DB 状态，若已 cancelled 直接退出
