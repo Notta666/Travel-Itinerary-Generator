@@ -1,3 +1,3 @@
 """
-Travel-Itinerary-Generator utility modules.
+projects/travel-itinerary-generator utility modules.
 """

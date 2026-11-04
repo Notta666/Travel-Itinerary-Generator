@@ -114,7 +114,7 @@ python -m pytest tests/ -q   # 45 项测试，覆盖 Goal 解析/预算/地理�
 ## 🏗️ 项目架构
 
 ```
-Travel-Itinerary-Generator/
+projects/travel-itinerary-generator/
 ├── pipeline/
 │   ├── run_pipeline.py        # 工序链入口（--goal 自然语言解析）
 │   └── steps/

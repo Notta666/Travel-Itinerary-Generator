@@ -61,7 +61,7 @@ class TestConfig(unittest.TestCase):
             del sys.modules["utils.config"]
         from utils.config import BASE_DIR
         self.assertTrue(os.path.isabs(BASE_DIR))
-        self.assertTrue(os.path.basename(BASE_DIR) == "Travel-Itinerary-Generator" or
+        self.assertTrue(os.path.basename(BASE_DIR) == "projects/travel-itinerary-generator" or
                         os.path.basename(BASE_DIR) != "")
 
     def test_load_ignores_placeholder(self):
