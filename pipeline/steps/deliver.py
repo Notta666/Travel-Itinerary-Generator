@@ -12,6 +12,32 @@ amap = AMapClient()
 BROCHURE_ENABLED = True
 BASE = PROJECT_ROOT
 
+def _export_files(context):
+    """在手册/报告同目录输出 <base>.ics/.gpx/.kml；任一导出失败只记 warning，不影响主产物。"""
+    base_path = context.get("brochure_path") or context.get("report_path") or context.get("html_path")
+    if not base_path or not context.get("itinerary"):
+        return {}
+    base = os.path.splitext(base_path)[0]
+    written = {}
+    try:
+        from utils import exporters
+    except Exception as e:
+        logger.warning(f"  ⚠️ 导出模块加载失败: {e}")
+        return written
+    for ext, fn in exporters.EXPORTERS:
+        try:
+            content = fn(context)
+            path = f"{base}.{ext}"
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+            written[ext] = path
+        except Exception as e:
+            logger.warning(f"  ⚠️ {ext} 导出跳过: {e}")
+    if written:
+        context["export_paths"] = written
+    return written
+
+
 def step_9_deliver(context):
     """归档 + 生成图文手册（含出行建议）"""
     logger.info(f"\n{'='*50}")
@@ -46,10 +72,15 @@ def step_9_deliver(context):
         except Exception as e:
             logger.warning(f"  ⚠️ 手册生成跳过: {e}")
 
+    export_paths = _export_files(context)
+
     print(f"\n  📄 HTML地图: {context.get('html_path','')}")
     print(f"  📄 MD报告:  {context.get('report_path','')}")
     if context.get("brochure_path"):
         print(f"  📖 图文手册: {context['brochure_path']}")
+    for ext, label in (("ics", "日历(ics)"), ("gpx", "GPX 路线"), ("kml", "KML 路线")):
+        if export_paths.get(ext):
+            print(f"  🗓️ {label}: {export_paths[ext]}")
     print(f"  ✨ 多方案辩论: ✅")
     print(f"{'='*50}\n")
     return context

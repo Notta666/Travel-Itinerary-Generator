@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.0] - 2026-11-18
+### Added
+- **多格式导出**：新增 `utils/exporters.py`（手写标准格式，无新增依赖）——`to_ics()`（RFC 5545：有日期+时段的 slot 为 `TZID=Asia/Shanghai` 定时事件并附 VTIMEZONE，无钟点的为全天事件；SUMMARY/LOCATION/GEO/DESCRIPTION 含交通、备注、价格及来源；UID=`sha1(行程id+日期+名称)@travel-itinerary`；CRLF、75 octets 折行、文本转义）、`to_gpx()`（GPX 1.1，每天一个 `<rte>`）、`to_kml()`（KML 2.2，每天一个 Folder，含 Placemark 与当日路线 LineString）；无坐标的点在 GPX/KML 中跳过并在 metadata/description 注明数量；坐标优先取 slot 自身，其次按名称回查 `poi_enriched`
+- `deliver` 在手册同目录输出 `<base>.ics/.gpx/.kml`（任一导出失败只记 warning，不影响手册/报告），终端结果新增三行路径
+- 手册顶部新增“导出”按钮组（日历 .ics / GPX / KML 相对链接、“打印 / 存为 PDF”调用 `window.print()`）与 `@media print` 样式（隐藏按钮与地图控件、每日卡片 `page-break-inside: avoid`、黑白友好）
+- Web：新增 `GET /download/{task_id}/{ext}`（扩展名白名单 ics/gpx/kml，沿用 OUTPUTS_DIR 路径穿越防护）；`/result/{task_id}` 页面内的导出链接自动改写为该路由
+- 新增测试 `tests/test_exporters.py`
+
 ## [3.7.0] - 2026-11-18
 ### Added
 - **数据溯源与时效**：新增 `utils/provenance.py`——`stamp(value, source, fetched_at=None, ttl_hours=None)` 返回 `{value, source, fetched_at(ISO8601 带时区), ttl_hours}`，`is_stale()` / `unwrap()`（兼容旧裸值）；默认 TTL：价格/门票 24h、营业时间 720h、天气 6h、交通时刻 24h；source 取值 `amap` / `flyai` / `weather:<provider>` / `llm`

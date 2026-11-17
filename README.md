@@ -84,6 +84,19 @@ python pipeline/run_pipeline.py --goal "出去玩" --city 杭州 --days 3
 | `{城市}_brochure_xxx.html` | **单文件HTML** | 图文手册（封面+每日行程+出行建议+天气预报+酒店推荐+交互地图） |
 | `{城市}_travel_xxx.md` | Markdown | 纯文本攻略报告 |
 
+### 导出：日历 / GPX / KML / PDF
+
+每次生成会在手册同目录额外输出 `{城市}_brochure_xxx.ics`、`.gpx`、`.kml`（手册顶部也有对应按钮；Web 端经 `/download/{task_id}/{ics|gpx|kml}` 下载）：
+
+| 格式 | 内容 | 导入方法 |
+|:---|:---|:---|
+| `.ics` | 每个景点/餐厅一个日历事件（有钟点为定时事件，时区 Asia/Shanghai；否则全天事件），含交通、备注、价格及来源 | **Google 日历**：设置 → 导入和导出 → 导入，选择 `.ics` 并选目标日历；**Apple 日历**：双击 `.ics` 或 文件 → 导入，选择目标日历 |
+| `.gpx` | 每天一条路线（`<rte>`），按游览顺序排列的途经点 | **奥维互动地图 / 两步路**：导入轨迹/路线文件选 `.gpx`；其它支持 GPX 1.1 的 App 同理 |
+| `.kml` | 每天一个文件夹，含地点标记与当天连线 | **Google My Maps**：新建地图 → 导入，选择 `.kml`；奥维、两步路也支持 KML |
+| PDF | 手册页点击“打印 / 存为 PDF”（浏览器打印对话框选“另存为 PDF”），已内置打印样式 | —— |
+
+注意：没有坐标的地点不会进入 GPX/KML（文件中注明被跳过数量）；坐标为高德 GCJ-02 坐标系，直接叠加到 WGS-84 底图（如 Google 地图）可能有数百米偏移，国内地图 App 内无此问题。
+
 ### Web App (FastAPI 网页端)
 
 提供 FastAPI 网页界面，提供可视化交互与步骤定制，支持浏览器提交任务：
@@ -131,7 +144,7 @@ docker compose down           # 停止
 
 ```bash
 python -m pip install pytest
-python -m pytest tests/ -q   # 169 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
+python -m pytest tests/ -q   # 183 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
 ```
 
 ---

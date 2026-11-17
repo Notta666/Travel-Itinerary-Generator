@@ -110,6 +110,10 @@ body::after{
 }
 .theme-btn:hover{border-color:var(--accent);color:var(--accent);}
 .theme-btn svg{width:16px;height:16px;}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.export-group{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.export-label{font-size:.75rem;color:var(--muted);font-weight:600;}
+a.theme-btn{text-decoration:none;}
 
 .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(16px,4vw,40px);}
 
@@ -249,6 +253,21 @@ td{font-weight:600;}
 .data-note li{margin:4px 0;line-height:1.6;}
 footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-align:center;font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.04em;}
 
+/* 打印 / 存为 PDF：隐藏交互控件与地图，每日卡片不跨页，黑白友好 */
+@media print{
+  html,body,html.dark body{background:#fff !important;color:#000 !important;}
+  *{box-shadow:none !important;text-shadow:none !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;}
+  .no-print,.topbar,.map-controls,.map-container,.map-fallback,.mt,.btn-book,.leaflet-control-container,.theme-btn{display:none !important;}
+  .topbar{position:static !important;}
+  .cr,.hs,.hc,.data-note,.cover{page-break-inside:avoid;break-inside:avoid;}
+  .cr,.hc,.data-note{border:1px solid #888 !important;background:#fff !important;}
+  .cp{filter:grayscale(1);}
+  a{color:#000 !important;text-decoration:none !important;}
+  .pv,.pv.stale,.muted{color:#333 !important;}
+  .wrap{max-width:none !important;padding:0 8mm !important;}
+  footer{border-top:1px solid #888 !important;color:#000 !important;}
+}
+
 /* 响应式微调 */
 @media(max-width:520px){.cover-meta{gap:8px;}.meta-pill{font-size:.78rem;padding:7px 11px;}}
 </style>
@@ -257,10 +276,21 @@ footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-al
 
 <div class="topbar">
   <div class="brand"><span class="dot"></span> TripGenius<span style="color:var(--muted);font-weight:500;"> · 行程手册</span></div>
-  <button class="theme-btn" onclick="toggleT()" id="themeBtn">
-    <svg id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-    <span id="themeTxt">深色</span>
-  </button>
+  <div class="topbar-actions">
+    <div class="export-group no-print" id="exportGroup">
+      <span class="export-label">导出</span>
+      {% if export_base %}
+      <a class="theme-btn" href="{{ export_base|urlencode }}.ics" download title="导入 Google / Apple 日历">日历(.ics)</a>
+      <a class="theme-btn" href="{{ export_base|urlencode }}.gpx" download title="导入奥维 / 两步路等">GPX</a>
+      <a class="theme-btn" href="{{ export_base|urlencode }}.kml" download title="导入 Google My Maps 等">KML</a>
+      {% endif %}
+      <button class="theme-btn" type="button" onclick="window.print()">打印 / 存为 PDF</button>
+    </div>
+    <button class="theme-btn no-print" onclick="toggleT()" id="themeBtn">
+      <svg id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <span id="themeTxt">深色</span>
+    </button>
+  </div>
 </div>
 
 <div class="wrap">

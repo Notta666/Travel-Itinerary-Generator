@@ -221,7 +221,7 @@ def _validation_removed(validation):
 
 
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
-                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source="", validation=None):
+                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source="", validation=None, export_base=""):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
     itinerary = _deduplicate_itinerary(itinerary)
     date_range_str = ""
@@ -875,6 +875,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         research_source=research_source,
         generated_ts=ts,
         validation_removed=_validation_removed(validation),
+        export_base=export_base,
     )
     return html
 
@@ -883,13 +884,15 @@ def generate(city="上海", itinerary=None, food_highlights=None, overall_note="
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
-    html = generate_brochure(itinerary, city, food_highlights, overall_note,
-                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices, research_source=research_source, validation=validation)
     outputs_dir = os.path.join(BASE_DIR, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     safe_city = re.sub(r'[^\w\u4e00-\u9fa5\-\.]', '_', city)
     ts = time.strftime("%Y%m%d_%H%M%S")
     path = os.path.join(outputs_dir, f"{safe_city}_brochure_{ts}.html")
+    # 导出文件（.ics/.gpx/.kml）与手册同名同目录，手册内用相对链接指向它们
+    export_base = os.path.splitext(os.path.basename(path))[0]
+    html = generate_brochure(itinerary, city, food_highlights, overall_note,
+                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices, research_source=research_source, validation=validation, export_base=export_base)
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"✅ 旅游手册(含地图)已生成: {path}")

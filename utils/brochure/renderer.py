@@ -63,6 +63,7 @@ def render_brochure(
     research_source,
     generated_ts,
     validation_removed=0,
+    export_base="",
 ):
     """
     Render the brochure HTML from the Jinja2 template.
@@ -117,5 +118,6 @@ def render_brochure(
         research_source=research_source,
         generated_ts=generated_ts,
         validation_removed=validation_removed,
+        export_base=export_base,
         data_notes=_data_notes(),
     )

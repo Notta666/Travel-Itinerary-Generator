@@ -4,7 +4,7 @@ import sys, os
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT)
 
-import json, uuid, asyncio, threading
+import json, re, uuid, asyncio, threading, urllib.parse
 from html import escape
 from pydantic import BaseModel, Field
 
@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils.log import get_logger  # noqa: E402
 logger = get_logger("webapp")
 
-app = FastAPI(title="AI旅行攻略", version="3.5.8")
+app = FastAPI(title="AI旅行攻略", version="3.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["POST", "GET", "OPTIONS"], allow_headers=["*"])
 
 # Static files and templates setup
@@ -90,7 +90,7 @@ class GenerateRequest(BaseModel):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "3.5.8"}
+    return {"status": "ok", "version": "3.8.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -208,6 +208,13 @@ async def get_result(task_id: str):
     brochure_html = task.get("result", {}).get("brochure", "")
     if not brochure_html:
         return HTMLResponse("<div style='padding:40px;text-align:center;font-family:sans-serif;'><h2>手册生成中，请稍后查看</h2></div>")
+    # 手册内导出链接是相对同目录文件名；经 /result 访问时改写为下载路由
+    brochure_path = task.get("result", {}).get("brochure_path", "")
+    if brochure_path:
+        base = urllib.parse.quote(os.path.splitext(os.path.basename(brochure_path))[0])
+        brochure_html = re.sub(
+            r'href="' + re.escape(base) + r'\.(ics|gpx|kml)"',
+            lambda m: f'href="/download/{task_id}/{m.group(1)}"', brochure_html)
     return HTMLResponse(brochure_html)
 
 
@@ -226,6 +233,35 @@ async def download(task_id: str):
     if not (real_path == real_outputs or real_path.startswith(real_outputs + os.sep)):
         raise HTTPException(403, "非法下载路径")
     return FileResponse(real_path, filename=os.path.basename(real_path), media_type="text/html")
+
+
+_EXPORT_MEDIA_TYPES = {
+    "ics": "text/calendar",
+    "gpx": "application/gpx+xml",
+    "kml": "application/vnd.google-earth.kml+xml",
+}
+
+
+@app.get("/download/{task_id}/{ext}")
+async def download_export(task_id: str, ext: str):
+    """Download the .ics / .gpx / .kml export that sits next to the brochure (extension whitelist)."""
+    media_type = _EXPORT_MEDIA_TYPES.get(ext.lower())
+    if not media_type:
+        raise HTTPException(404, "不支持的导出格式")
+    task = _get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    brochure = task.get("result", {}).get("brochure_path", "")
+    if not brochure:
+        raise HTTPException(404, "文件不存在")
+    path = os.path.splitext(brochure)[0] + "." + ext.lower()
+    real_path = os.path.realpath(path)
+    real_outputs = os.path.realpath(OUTPUTS_DIR)
+    if not (real_path == real_outputs or real_path.startswith(real_outputs + os.sep)):
+        raise HTTPException(403, "非法下载路径")
+    if not os.path.isfile(real_path):
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(real_path, filename=os.path.basename(real_path), media_type=media_type)
 
 
 @app.get("/stream/{task_id}")
