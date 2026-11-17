@@ -41,6 +41,7 @@ def render_brochure(
     all_hotels_json,
     research_source,
     generated_ts,
+    validation_removed=0,
 ):
     """
     Render the brochure HTML from the Jinja2 template.
@@ -94,4 +95,5 @@ def render_brochure(
         all_hotels_json=all_hotels_json,
         research_source=research_source,
         generated_ts=generated_ts,
+        validation_removed=validation_removed,
     )

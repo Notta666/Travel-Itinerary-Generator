@@ -189,8 +189,16 @@ def _deduplicate_itinerary(itinerary):
     return deduped_itinerary
 
 
+def _validation_removed(validation):
+    """planner 防幻觉校验结果 {removed, issues} → 被移除的未验证地点数（异常输入按 0）。"""
+    try:
+        return max(0, int((validation or {}).get("removed", 0)))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
 def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
-                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source=""):
+                       transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, flyai_prices=None, research_source="", validation=None):
     """生成「图文手册+交互地图」单文件HTML，含交通/住宿/预算等"""
     itinerary = _deduplicate_itinerary(itinerary)
     date_range_str = ""
@@ -814,16 +822,17 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         all_hotels_json=_js_json(all_hotels_data).replace("</", "<\\/"),
         research_source=research_source,
         generated_ts=ts,
+        validation_removed=_validation_removed(validation),
     )
     return html
 
 
-def generate(city="上海", itinerary=None, food_highlights=None, overall_note="", transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, start_date="", flyai_prices=None, research_source=""):
+def generate(city="上海", itinerary=None, food_highlights=None, overall_note="", transport="", accommodation="", budget="", preference="", tips=None, weather=None, start_city="", people_count=2, start_date="", flyai_prices=None, research_source="", validation=None):
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
     html = generate_brochure(itinerary, city, food_highlights, overall_note,
-                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices, research_source=research_source)
+                            transport, accommodation, budget, preference, tips, weather, start_city, people_count, flyai_prices=flyai_prices, research_source=research_source, validation=validation)
     outputs_dir = os.path.join(BASE_DIR, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     safe_city = re.sub(r'[^\w\u4e00-\u9fa5\-\.]', '_', city)

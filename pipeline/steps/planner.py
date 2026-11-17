@@ -6,6 +6,7 @@ import json, copy, time, re
 from concurrent.futures import ThreadPoolExecutor
 
 from utils.log import get_logger
+from utils.schema import validate_itinerary, count_removed, has_blocking_issues
 logger = get_logger("travel_pipeline")
 
 
@@ -37,6 +38,81 @@ def _safe_parse_fusion(raw):
             except Exception:
                 continue
     return {"days": [], "overall_note": "LLM 返回异常，降级到规则引擎", "food_highlights": []}
+
+
+def _matrix_cell_km(cell):
+    """距离矩阵单元 → 公里数(1位小数)。单元为 {"distance": 米, "duration": 秒}（见 AMapClient.distance_matrix）
+    或纯数字（视为公里）；缺测/无法解析为 0。"""
+    if isinstance(cell, dict):
+        cell = cell.get("distance")
+        if isinstance(cell, bool) or not isinstance(cell, (int, float)):
+            return 0
+        return round(cell / 1000.0, 1)
+    if isinstance(cell, (int, float)) and not isinstance(cell, bool):
+        return round(cell, 1)
+    return 0
+
+
+def _build_candidates(pois, food_list):
+    """输入候选集：景点 + 推荐餐厅 + 景点附近餐厅（供防幻觉校验使用）。"""
+    candidates = []
+    for p in pois or []:
+        if isinstance(p, dict):
+            candidates.append(p)
+            for nf in p.get("nearby_food", []) or []:
+                if isinstance(nf, dict):
+                    candidates.append(nf)
+    for f in food_list or []:
+        if isinstance(f, dict):
+            candidates.append(f)
+    return candidates
+
+
+def _build_retry_prompt(prompt, issues, limit=20):
+    """在原 Fusion 提示后追加一段校验反馈（仅追加，不改动原提示）。"""
+    shown = "\n".join(f"- {i}" for i in list(issues)[:limit])
+    return (
+        f"{prompt}\n\n【校验反馈】以下地点不在候选列表中，请只使用候选列表中的地点"
+        f"（景点见【原始景点与避雷/赞点数据】，餐厅见【原始餐厅与避雷/赞点数据】），"
+        f"并重新输出完整JSON：\n{shown}"
+    )
+
+
+def _plan_with_validation(llm_call, system_prompt, fusion_prompt, candidates, distance_matrix=None,
+                          temperature=0.3, max_tokens=8000):
+    """调用 Fusion LLM → 防幻觉校验；含非候选 POI/结构错误时回灌 issues 重试最多 1 次。
+
+    仍不合格则用清洗后的结果继续。返回 (fusion_result_dict, validation_dict)，
+    validation_dict = {"removed": N, "issues": [...], "retried": bool}。
+    首次 LLM 调用的异常向上抛（由调用方走规则引擎降级）；重试/校验自身的异常只记日志。
+    """
+    raw1 = llm_call(system_prompt, fusion_prompt, temperature=temperature, max_tokens=max_tokens)
+    result1 = _safe_parse_fusion(raw1)
+    try:
+        cleaned1, issues1 = validate_itinerary(result1, candidates, distance_matrix)
+    except Exception as e:
+        logger.warning(f"  ⚠️ 行程校验异常，跳过校验: {e}")
+        return result1, {"removed": 0, "issues": [], "retried": False}
+
+    final, issues, retried = cleaned1, issues1, False
+    if has_blocking_issues(issues1):
+        retried = True
+        logger.warning(f"  ⚠️ 行程校验发现 {len(issues1)} 项问题，回灌 LLM 重试 1 次")
+        try:
+            raw2 = llm_call(system_prompt, _build_retry_prompt(fusion_prompt, issues1),
+                            temperature=temperature, max_tokens=max_tokens)
+            cleaned2, issues2 = validate_itinerary(_safe_parse_fusion(raw2), candidates, distance_matrix)
+            if cleaned2.get("days"):
+                final, issues = cleaned2, issues2
+        except Exception as e:
+            logger.warning(f"  ⚠️ 校验重试失败，沿用清洗后的首次结果: {e}")
+
+    validation = {"removed": count_removed(issues), "issues": list(issues), "retried": retried}
+    if issues:
+        logger.info(f"  🔎 行程校验: 剔除 {validation['removed']} 项，共 {len(issues)} 条 issue")
+        for i in issues[:10]:
+            logger.info(f"    - {i}")
+    return final, validation
 
 
 def _build_lodging_instruction(context):
@@ -144,7 +220,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
     compact_mat = []
     if raw_mat and len(raw_mat) >= len(dist_labels):
         for row in raw_mat[:len(dist_labels)]:
-            compact_mat.append([round(x, 1) if isinstance(x, (int, float)) else 0 for x in row[:len(dist_labels)]])
+            compact_mat.append([_matrix_cell_km(x) for x in row[:len(dist_labels)]])
 
     input_json = json.dumps({
         "city": city,
@@ -275,6 +351,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 7. ⚠️【严禁重复原则】：整个行程（跨天及同天）中，每个景点与餐厅必须全局唯一，绝不安排重复的景点或餐厅。
 {format_instruction}"""
 
+    validation = {"removed": 0, "issues": [], "retried": False}
     try:
         # Bull + Bear 并行调用
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -347,8 +424,10 @@ Bear悠闲避雷方案摘要: {bear_summary}
   "food_highlights":["必吃1","必吃2"]}}"""
 
         logger.info("  ⚖️ Fusion 综合裁决中...")
-        fusion_raw = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=8000)
-        fusion_result = _safe_parse_fusion(fusion_raw)
+        fusion_result, validation = _plan_with_validation(
+            call_deepseek, "首席规划官。返回纯JSON。", fusion_prompt,
+            _build_candidates(pois, food_list), dist_matrix)
+        fusion_result["validation"] = validation
         days_out = fusion_result.get("days", [])
     except Exception as e:
         logger.warning(f"  ⚠️ LLM 路线规划规划失败: {e}，将启动规则引擎降级规划方案。")
@@ -540,6 +619,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
     context["itinerary"] = itinerary
     context["food_highlights"] = fusion_result.get("food_highlights", [])
     context["overall_note"] = fusion_result.get("overall_note", "")
+    context["validation"] = validation
     logger.info(f"  ✅ Fusion完成: {len(itinerary)} 天")
     for d in itinerary:
         logger.info(f"    Day {d['day']} [{d['label']}]: {len(d['pois'])}景点 + {len(d.get('foods',[]))}餐厅")

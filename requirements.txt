@@ -13,3 +13,6 @@ uvicorn>=0.23.0
 # Brochure template rendering
 jinja2>=3.0.0
 
+# Itinerary schema validation (anti-hallucination)
+pydantic>=2
+

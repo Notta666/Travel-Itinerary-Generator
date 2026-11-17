@@ -25,6 +25,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     combined_itinerary = []
     combined_food_highlights = []
     combined_overall_note = "【多城市串联路线规划】\n"
+    combined_validation = {"removed": 0, "issues": []}
     
     current_date = context.get("start_date") or datetime.date.today().strftime("%Y-%m-%d")
 
@@ -114,6 +115,10 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         if sub_ctx.get("overall_note"):
             combined_overall_note += f"\n### {c} 规划说明\n{sub_ctx['overall_note']}\n"
 
+        sub_val = sub_ctx.get("validation") or {}
+        combined_validation["removed"] += int(sub_val.get("removed", 0) or 0)
+        combined_validation["issues"].extend(sub_val.get("issues", []) or [])
+
     # P2-23: 注入多城市过渡与城际动线综合建议
     if len(multi_cities_list) > 1:
         combined_overall_note += "\n### 多城市过渡与城际衔接建议 (Transition Guide)\n"
@@ -175,6 +180,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
     context["itinerary"] = combined_itinerary
     context["food_highlights"] = combined_food_highlights
     context["overall_note"] = combined_overall_note
+    context["validation"] = combined_validation
     context["city_itineraries"] = {c: city_contexts[c].get("itinerary") for c in multi_cities_list if c in city_contexts and not city_contexts[c].get("error")}
 
     return context

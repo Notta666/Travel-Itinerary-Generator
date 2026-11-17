@@ -39,6 +39,7 @@ class PipelineContext:
     food_city_map: Dict[str, str] = field(default_factory=dict)
     food_highlights: List[str] = field(default_factory=list)
     overall_note: str = ""
+    validation: Dict[str, Any] = field(default_factory=dict)
     city_itineraries: Dict[str, Any] = field(default_factory=dict)
     
     # Outputs

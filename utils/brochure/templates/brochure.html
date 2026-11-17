@@ -268,6 +268,7 @@ footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-al
       <span class="meta-pill"><span class="ic">🏠</span><b>{{ accommodation or '市中心' }}</b></span>
       {% if cover_extra_html %}<span class="meta-pill"><span class="ic">🧭</span>{{ cover_extra_html|safe }}</span>{% endif %}
       {% if research_source == 'default_pois' %}<span class="src-badge">⚠ 景点数据来源：内置推荐库（未连接小红书）</span>{% endif %}
+      {% if validation_removed %}<span class="src-badge">⚠ 已移除 {{ validation_removed }} 项未经验证的地点</span>{% endif %}
     </div>
   </header>
 

@@ -39,7 +39,8 @@ def step_9_deliver(context):
                           people_count=prefs.get("people_count", 2),
                           start_date=context.get("start_date", ""),
                           research_source=prefs.get("research_source", ""),
-                          flyai_prices=context.get("flyai_prices", {}))
+                          flyai_prices=context.get("flyai_prices", {}),
+                          validation=context.get("validation"))
             context["brochure_path"] = path
             logger.info(f"  📖 手册: {path}")
         except Exception as e:

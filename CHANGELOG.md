@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.1] - 2026-11-18
+### Added
+- **防幻觉校验**：新增 `utils/schema.py`（pydantic v2 模型 `Itinerary/Day/Slot/POIRef`，`extra="allow"` 不丢字段）与 `validate_itinerary(raw, candidates, distance_matrix=None)`：POI 须属于输入候选集（id 精确 / 名称规范化相等 / 名称包含且坐标 ≤100m），同日时间段不重叠、相邻交通时长 ≤ 距离矩阵估计×1.5（后两项仅记 issue）
+- planner Fusion 接入校验：含非候选 POI 或结构错误时把 issues 回灌 LLM 重试最多 1 次，仍不合格则剔除并写入 `validation: {removed, issues}`；手册封面在 `removed > 0` 时显示“已移除 N 项未经验证的地点”（Jinja2 autoescape 保持开启）；多城市结果汇总各城 validation
+- 名称匹配：slot 无坐标时，规范化名称与恰好一个候选存在包含关系（较短名长度≥2）即放行并回填候选 id/坐标；命中多个候选记 `ambiguous` issue 并剔除；有坐标时仍按 100m 规则
+- 新增测试 `tests/test_schema_validation.py`、`tests/test_offline_guard.py`；`requirements.txt` 增加 `pydantic>=2`
+
+### Fixed
+- `planner.py` 传给 LLM 的距离矩阵此前因 `isinstance` 判断把 dict 单元全部变 0；现取 `distance`（米）换算为公里，并新增 `_matrix_cell_km` 与断言 prompt 含非零矩阵的测试
+
+### Changed
+- **测试离线化**：新增 `tests/conftest.py`——默认禁止对非本机地址的 socket 连接、图片抓取 `get_photos` 返回无图、相关模块 `time.sleep` 置空；`TR_TESTS_ALLOW_NETWORK=1` 可跳过。全量 `pytest tests -q` 由 7 分钟以上降至约 16 秒
+
 ## [3.6.0] - 2026-11-17
 ### Added
 - **CI 测试 job**：`.github/workflows/lint.yml` 新增 `test` job（ubuntu / Python 3.11 / `pytest tests -q`，使用占位环境变量，无真实密钥）
