@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from utils.log import get_logger
 from utils.schema import validate_itinerary, count_removed, has_blocking_issues
+from utils import provenance
 logger = get_logger("travel_pipeline")
 
 
@@ -15,6 +16,23 @@ def _normalize_name(name):
         return ""
     cleaned = re.sub(r'[（(].*?[）)]', '', name)
     return re.sub(r'[^\w\u4e00-\u9fa5]', '', cleaned).lower()
+
+
+def _cost_meta(name, cost, candidates):
+    """价格溯源：cost 形如价格（含数字）才打 stamp。
+
+    与输入候选（高德/飞猪数据）里同名条目的 cost 一致 → source=amap（数据原样透传）；
+    否则视为大模型生成/估算 → source=llm（手册标注「AI 估算，请核实」）。
+    """
+    cost_s = str(cost or "").strip()
+    if not cost_s or not re.search(r"\d", cost_s):
+        return None
+    key = _normalize_name(name)
+    for c in candidates or []:
+        if (isinstance(c, dict) and _normalize_name(c.get("name")) == key
+                and str(c.get("cost", "")).strip() == cost_s):
+            return provenance.stamp(cost_s, provenance.SOURCE_AMAP, ttl_hours=provenance.TTL_PRICE_HOURS)
+    return provenance.stamp(cost_s, provenance.SOURCE_LLM, ttl_hours=provenance.TTL_PRICE_HOURS)
 
 
 def _safe_parse_fusion(raw):
@@ -519,6 +537,7 @@ Bear悠闲避雷方案摘要: {bear_summary}
     itinerary = []
     seen_sights = set()
     seen_foods = set()
+    cost_candidates = _build_candidates(pois, food_list)
     for d in days_out:
         day_pois, day_foods = [], []
 
@@ -602,6 +621,16 @@ Bear悠闲避雷方案摘要: {bear_summary}
                 "type": s_type,
                 "city": slot_city,
             }
+            # 溯源：并行字段，不改动原有字段（TR-3）
+            _cm = _cost_meta(name, entry["cost"], cost_candidates)
+            if _cm:
+                entry["cost_meta"] = _cm
+            if s_type != "food" and matched and "verified" in matched:
+                entry["verified"] = matched.get("verified")
+                if matched.get("opening_hours"):
+                    entry["opening_hours"] = matched["opening_hours"]
+                    if matched.get("opening_hours_meta"):
+                        entry["opening_hours_meta"] = matched["opening_hours_meta"]
             if s_type == "food":
                 entry["cuisine"] = s.get("cuisine", "")
                 day_foods.append(entry)

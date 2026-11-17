@@ -2,6 +2,7 @@ import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
+from utils import provenance
 logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
@@ -104,6 +105,15 @@ def step_7_query_tickets(context):
         gaode_ok = sum(1 for td in ticket_data.values() if td and td.get("source") == "gaode")
         if gaode_ok:
             logger.info(f"  ✅ Gaode 门票兜底成功: {gaode_ok}/{len(fail_names)}")
+
+    # 溯源：为有价格的门票加并行字段 price_meta（保留原 price_min/price_max/source）
+    for _n, _td in ticket_data.items():
+        if not _td or _td.get("source") == "fail" or _td.get("price_min") is None:
+            continue
+        _src = provenance.SOURCE_AMAP if _td.get("source") == "gaode" else provenance.SOURCE_FLYAI
+        _td["price_meta"] = provenance.stamp(
+            {"min": _td.get("price_min"), "max": _td.get("price_max")}, _src,
+            fetched_at=_td.get("fetched_at"), ttl_hours=provenance.TTL_PRICE_HOURS)
 
     flyai["tickets"] = ticket_data
     context["flyai_prices"] = flyai

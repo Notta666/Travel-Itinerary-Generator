@@ -2,6 +2,7 @@ import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
+from utils import provenance
 logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
@@ -9,6 +10,55 @@ if PROJECT_ROOT not in sys.path:
 
 from utils.amap_api import AMapClient
 amap = AMapClient()
+
+
+def _norm_poi_name(name):
+    """名称规范化：去括号注释、空白与常见标点，转小写。"""
+    n = re.sub(r"[（(].*?[）)]", "", str(name or ""))
+    return re.sub(r"[\s·\-_,，。、]", "", n).lower()
+
+
+def _poi_name_matches(query, found):
+    """高德返回的 POI 名称是否对得上要找的景点（包含关系，或字符序列相似度 >= 0.6）。"""
+    q, f = _norm_poi_name(query), _norm_poi_name(found)
+    if not q or not f:
+        return False
+    if q in f or f in q:
+        return True
+    import difflib
+    return difflib.SequenceMatcher(None, q, f).ratio() >= 0.6
+
+
+def _verify_poi_exists(name, cities, client=None):
+    """POI 存在性二次校验：按「名称+城市」查高德 place/text。
+
+    返回 (verified, info)：
+      verified=True   高德检索到同名 POI（info 含 amap_id / opening_hours）
+      verified=False  所有候选城市均成功检索且查无同名 POI
+      verified=None   检索失败（网络/限流/接口错误）且无命中 → 结果未知，不降权
+    """
+    client = client or amap
+    any_failed = False
+    for city in (cities or [""]):
+        try:
+            pois = client.place_text_checked(keywords=name, region=city, city_limit=True,
+                                             page_size=3, show_fields="business")
+        except Exception:
+            pois = None
+        if pois is None:
+            any_failed = True
+            continue
+        for p in pois:
+            if isinstance(p, dict) and _poi_name_matches(name, p.get("name", "")):
+                biz = p.get("business") or {}
+                if not isinstance(biz, dict):
+                    biz = {}
+                hours = biz.get("opentime_today") or biz.get("opentime_week") or ""
+                if isinstance(hours, list):
+                    hours = ""
+                return True, {"amap_id": p.get("id", ""), "opening_hours": str(hours or "").strip()}
+    return (None if any_failed else False), {}
+
 
 def step_4_enrich(context):
     """逆地理编码拿地址 → 小红书美食列表对接高德坐标验证 (批量并行)"""
@@ -70,8 +120,52 @@ def step_4_enrich(context):
             "complaints": sight_meta.get(name, {}).get("complaints", "无"),
             "highlights": sight_meta.get(name, {}).get("highlights", "无")
         }
+        _known_id = poi.get("amap_id") or poi.get("id")
+        if _known_id:
+            poi_info["amap_id"] = str(_known_id)
         enriched.append(poi_info)
         logger.info(f"  ✅ {name:20s} | {poi_info.get('address','')[:30]}")
+
+    # POI 存在性二次校验（TR-3）：没有高德 id 的 POI 按「名称+城市」检索；
+    # 查无 → verified=False 并排到最后（降权）；检索失败 → verified=None（未知，不降权）。
+    cities_for_verify = [c.strip() for c in city.replace("，", ",").replace("+", ",").split(",") if c.strip()]
+    sight_city_map = context.get("sight_city_map", {}) or {}
+
+    def _verify_one(info):
+        known_id = info.get("amap_id")
+        if known_id:
+            return info["name"], True, {}
+        cand = []
+        mapped = str(sight_city_map.get(info["name"], "")).strip()
+        if mapped:
+            cand.append(mapped)
+        cand += [c for c in cities_for_verify if c not in cand]
+        return (info["name"],) + _verify_poi_exists(info["name"], cand, amap)
+
+    verify_results = {}
+    if enriched:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            vfutures = {ex.submit(_verify_one, info): info["name"] for info in enriched}
+            for f in as_completed(vfutures):
+                try:
+                    n, verified, vinfo = f.result()
+                    verify_results[n] = (verified, vinfo)
+                except Exception:
+                    verify_results[vfutures[f]] = (None, {})
+    for info in enriched:
+        verified, vinfo = verify_results.get(info["name"], (None, {}))
+        info["verified"] = verified
+        if vinfo.get("amap_id"):
+            info["amap_id"] = vinfo["amap_id"]
+        if vinfo.get("opening_hours"):
+            info["opening_hours"] = vinfo["opening_hours"]
+            info["opening_hours_meta"] = provenance.stamp(
+                vinfo["opening_hours"], provenance.SOURCE_AMAP,
+                ttl_hours=provenance.TTL_OPENING_HOURS)
+        if verified is False:
+            logger.warning(f"  ⚠️ {info['name']}: 未在高德地图中检索到，降权并标注「请核实」")
+    # 稳定排序：verified=False 的排到最后（降权），其余保持原相对顺序
+    enriched.sort(key=lambda p: p.get("verified") is False)
 
     xhs_foods = context.get("xhs_food_data", [])
     prefs = context.get("preferences", {})

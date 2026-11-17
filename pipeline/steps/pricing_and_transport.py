@@ -2,10 +2,33 @@ import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
+from utils import provenance
 logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+
+def _attach_price_meta(entry, client, cmd_type, schedule=False):
+    """给 flyai 品类结果加溯源并行字段 price_meta（交通另加 schedule_meta）。
+
+    fetched_at 取 client.fetch_times[cmd_type]：缓存命中=缓存写入时间，实时=当前时间；
+    取不到（如测试替身）则由 stamp 退回当前时间。
+    """
+    if not entry or not entry.get("items"):
+        return entry
+    ts = None
+    ft = getattr(client, "fetch_times", None)
+    if isinstance(ft, dict):
+        ts = ft.get(cmd_type)
+    entry["price_meta"] = provenance.stamp(
+        entry.get("cheapest"), provenance.SOURCE_FLYAI, fetched_at=ts,
+        ttl_hours=provenance.TTL_PRICE_HOURS)
+    if schedule:
+        entry["schedule_meta"] = provenance.stamp(
+            len(entry["items"]), provenance.SOURCE_FLYAI, fetched_at=ts,
+            ttl_hours=provenance.TTL_SCHEDULE_HOURS)
+    return entry
 
 
 def step_55_flyai_pricing(context, client=None):
@@ -86,6 +109,7 @@ def step_55_flyai_pricing(context, client=None):
                         "items": items, "source": source,
                         "cheapest": ch_price, "count": len(items)
                     }
+                    _attach_price_meta(results[key], client, key, schedule=True)
                     logger.info(f"  ✅ {key}: 查询成功, 最低价 ¥{ch_price}")
                 else:
                     results[key] = {"items": [], "source": source, "cheapest": None, "count": 0}
@@ -125,6 +149,7 @@ def step_55_flyai_pricing(context, client=None):
                 "items": items, "source": source,
                 "cheapest": ch_price, "count": len(items)
             }
+            _attach_price_meta(results[key], client, key)
             # 调试：记录酒店 API 返回的可选字段质量
             h0 = items[0]
             debug_fields = {k: h0.get(k, "❌缺失") for k in ("star", "decoration_time", "main_pic", "jump_url", "rating")}
@@ -269,6 +294,7 @@ def step_56_transport_decision(context, amap=None):
                         if items:
                             ch_flight = min(items, key=lambda x: x.get("price", float('inf'))).get("price")
                             flyai["flight"] = {"items": items, "source": src, "cheapest": ch_flight, "count": len(items)}
+                            _attach_price_meta(flyai["flight"], fc, "flight", schedule=True)
                             context["flyai_prices"] = flyai
                     elif new_transport == "高铁" and not flyai.get("train", {}).get("items"):
                         logger.info(f"  🔄 追加查询高铁价格...")
@@ -278,6 +304,7 @@ def step_56_transport_decision(context, amap=None):
                         if items:
                             ch_train = min(items, key=lambda x: x.get("price", float('inf'))).get("price")
                             flyai["train"] = {"items": items, "source": src, "cheapest": ch_train, "count": len(items)}
+                            _attach_price_meta(flyai["train"], fc, "train", schedule=True)
                             context["flyai_prices"] = flyai
             else:
                 logger.warning(f"  ⚠️ LLM 返回异常交通方式: {new_transport}，保留原值")

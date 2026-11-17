@@ -240,6 +240,13 @@ td{font-weight:600;}
 .map-container{height:64vh;min-height:420px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
 .map-fallback{padding:40px;text-align:center;color:var(--muted);font-weight:600;}
 
+/* 数据溯源：来源 · 更新于；过期整行灰显 */
+.pv{font-size:.72rem;color:var(--muted);font-weight:500;margin:5px 0 0;line-height:1.5;}
+.pv.stale{opacity:.55;font-style:italic;}
+.data-note{margin-top:40px;padding:18px 22px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font-size:.8rem;color:var(--muted);}
+.data-note h2{font-size:.95rem;margin:0 0 8px;color:var(--text);}
+.data-note ul{margin:0;padding-left:1.2em;}
+.data-note li{margin:4px 0;line-height:1.6;}
 footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-align:center;font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.04em;}
 
 /* 响应式微调 */
@@ -305,6 +312,14 @@ footer{margin-top:48px;padding:28px 0;border-top:1px solid var(--border);text-al
     {{ food_highlights_html|safe }}
 
   </main>
+
+  <section class="data-note" id="data-note">
+    <h2>📋 数据说明</h2>
+    <ul>
+      {% for item in data_notes %}<li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </section>
 
   <footer>
     Curated by TripGenius · 地理数据 © 高德地图 · 生成于 {{ generated_ts }}

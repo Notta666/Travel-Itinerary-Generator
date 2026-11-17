@@ -57,6 +57,9 @@ class FlyAIApiClient:
         self.ttls = {**self.DEFAULT_TTLS, **(ttls or {})}
         self._cli_available = None  # 懒检测
         self._risk_blocked_until = 0.0  # 标记风控封锁截止时间戳（30分钟自动解锁）
+        # 溯源：各品类最近一次结果的"数据取得时间"（epoch 秒）。
+        # 缓存命中 → 缓存写入时间；实时查询 → 当前时间。供 utils.provenance.stamp 使用。
+        self.fetch_times = {}
 
     @property
     def risk_blocked(self):
@@ -109,20 +112,26 @@ class FlyAIApiClient:
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            elapsed = time.time() - data.get("cached_at", 0)
+            cached_at = data.get("cached_at", 0)
+            elapsed = time.time() - cached_at
             ttl = self.ttls.get(cmd_type, 1800)
             if elapsed < ttl:
-                return data.get("result")
+                result = data.get("result")
+                if result:
+                    self.fetch_times[cmd_type] = cached_at
+                return result
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"读取 FlyAI 缓存失败: {e}")
         return None
 
     def _write_cache(self, cmd_type, cache_path, result):
         """写入缓存（带时间戳）"""
+        now_ts = time.time()
+        self.fetch_times[cmd_type] = now_ts
         try:
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump({
-                    "cached_at": time.time(),
+                    "cached_at": now_ts,
                     "cmd_type": cmd_type,
                     "result": result,
                 }, f, ensure_ascii=False, indent=2)
@@ -526,6 +535,9 @@ class FlyAIApiClient:
                     if fname.startswith("poi_"):
                         with open(os.path.join(cache_dir, fname), "r", encoding="utf-8") as f:
                             data = json.load(f)
+                        _poi_cached_at = data.get("cached_at") if isinstance(data, dict) else None
+                        if not isinstance(_poi_cached_at, (int, float)):
+                            _poi_cached_at = os.path.getmtime(os.path.join(cache_dir, fname))
                         for item in (data.get("result", []) if isinstance(data, dict) and "result" in data else
                                      (data if isinstance(data, list) else [])):
                             if isinstance(item, dict) and poi_name in item.get("name", ""):
@@ -538,6 +550,8 @@ class FlyAIApiClient:
                                             "price_min": vals[0],
                                             "price_max": vals[-1],
                                             "source": "regex",
+                                            # 溯源：POI 缓存的写入时间（非当前时间）
+                                            "fetched_at": _poi_cached_at,
                                         }
             except (OSError, json.JSONDecodeError):
                 pass
@@ -564,6 +578,7 @@ class FlyAIApiClient:
                                 "price_min": vals[0],
                                 "price_max": vals[-1],
                                 "source": "ai_search",
+                                "fetched_at": time.time(),
                             }
             except Exception:
                 continue

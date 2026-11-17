@@ -14,6 +14,27 @@ except ImportError:
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+def _fmt_ttl(hours):
+    if hours % 24 == 0 and hours >= 24:
+        return f"{int(hours // 24)} 天"
+    return f"{int(hours)} 小时"
+
+
+def _data_notes():
+    """手册页脚「数据说明」：数据源与时效规则（TTL 取自 utils.provenance，保持单一事实来源）。"""
+    from utils import provenance as pv
+    return [
+        "数据来源：高德地图（POI、地址、营业时间、周边酒店价格）；飞猪 FlyAI（机票/高铁/酒店/门票价格）；"
+        "高德天气与 Open-Meteo（天气，超出预报范围时为往年同期参考）。",
+        "每条价格、营业时间、天气与交通时刻旁标注「来源 · 更新于 MM-DD HH:mm」，时间为数据实际取得时间（缓存命中则为缓存写入时间）。",
+        f"时效规则：价格/门票 {_fmt_ttl(pv.TTL_PRICE_HOURS)}、交通时刻 {_fmt_ttl(pv.TTL_SCHEDULE_HOURS)}、"
+        f"营业时间 {_fmt_ttl(pv.TTL_OPENING_HOURS)}、天气 {_fmt_ttl(pv.TTL_WEATHER_HOURS)}；"
+        "超过时效的数据会灰显并提示「可能已变化，出行前请核实」。",
+        "标注「AI 估算，请核实」的数值由大模型生成，并非实时报价，请以商家或官方渠道为准。",
+        "标注「未在地图中检索到，请核实」的地点未能在高德地图中找到同名 POI，请出行前自行确认其是否存在。",
+    ]
+
+
 def _get_env():
     """Get the Jinja2 environment, caching the template loader."""
     return Environment(
@@ -96,4 +117,5 @@ def render_brochure(
         research_source=research_source,
         generated_ts=generated_ts,
         validation_removed=validation_removed,
+        data_notes=_data_notes(),
     )

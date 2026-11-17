@@ -131,7 +131,7 @@ docker compose down           # 停止
 
 ```bash
 python -m pip install pytest
-python -m pytest tests/ -q   # 98 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
+python -m pytest tests/ -q   # 169 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
 ```
 
 ---
@@ -206,6 +206,23 @@ projects/travel-itinerary-generator/
 | 天气 | 高德天气 API | 🥈 |
 | 图片 | 高德→360图片→百度/Bing | 🥉 降级检索 |
 | 路线规划 | DeepSeek API | 决策引擎 |
+
+---
+
+## 🕒 数据来源与时效
+
+手册中的价格、门票、营业时间、天气、交通时刻都可溯源：每条数据旁标注「来源 · 更新于 MM-DD HH:mm」，超过时效的数据会灰显并提示「可能已变化，出行前请核实」。手册页脚有「数据说明」小节。
+
+| 数据 | 来源标记 | 默认时效（TTL） |
+|:---|:---|:---:|
+| 机票/高铁/酒店价格、景点门票 | `flyai`（飞猪 FlyAI）/ `amap`（高德兜底） | 24 小时 |
+| 交通时刻 | `flyai` | 24 小时 |
+| 营业时间 | `amap`（高德 `business.opentime_*`） | 30 天 |
+| 天气 | `weather:amap` / `weather:open-meteo`（往年同期参考） | 6 小时 |
+| 大模型生成的价格 | `llm` → 标注「AI 估算，请核实」 | 24 小时 |
+
+- 数据结构：原字段不变，另增并行字段 `price_meta` / `cost_meta` / `opening_hours_meta` / `meta`，形如 `{"value", "source", "fetched_at", "ttl_hours"}`（见 `utils/provenance.py`）。缓存命中时 `fetched_at` 是缓存写入时间，而不是当前时间。
+- POI 存在性校验：没有高德 id 的景点会按「名称+城市」二次检索；查无的景点标注「未在地图中检索到，请核实」并排到后面；检索失败（网络问题）视为未知，不降权。
 
 ---
 

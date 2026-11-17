@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.7.0] - 2026-11-18
+### Added
+- **数据溯源与时效**：新增 `utils/provenance.py`——`stamp(value, source, fetched_at=None, ttl_hours=None)` 返回 `{value, source, fetched_at(ISO8601 带时区), ttl_hours}`，`is_stale()` / `unwrap()`（兼容旧裸值）；默认 TTL：价格/门票 24h、营业时间 720h、天气 6h、交通时刻 24h；source 取值 `amap` / `flyai` / `weather:<provider>` / `llm`
+- 数据产生处新增**并行字段**（原字段保持不变）：`flyai_prices.{flight,train,hotel}.price_meta`（交通另有 `schedule_meta`）、`flyai_prices.tickets[*].price_meta`、行程 POI/餐厅 `cost_meta`、POI `opening_hours` + `opening_hours_meta`（高德 `business.opentime_*`）、天气 `weather.meta`；多城市汇总保留各 meta
+- `fetched_at` 取数据**实际取得时间**：`FlyAIApiClient.fetch_times[品类]` 在缓存命中时为缓存写入时间、实时查询为当前时间；门票 regex 路径取 POI 缓存的 `cached_at`
+- LLM 生成的价格一律 `source=llm`，手册/报告标注「AI 估算，请核实」；与高德候选数据一致的价格视为 `amap` 透传
+- **POI 存在性二次校验**（enrich）：无高德 id 的 POI 按「名称+城市」调用新增的 `AMapClient.place_text_checked()`（区分「查无」与「请求失败」）；查无 → `verified=False`、排到 `poi_enriched` 末尾（降权）并在手册/报告标注「未在地图中检索到，请核实」；请求失败 → `verified=None`（未知，不降权）
+- **手册展示**：带 meta 的字段渲染小号灰字「来源 · 更新于 MM-DD HH:mm」；超过 TTL 整行灰显并提示「可能已变化，出行前请核实」；页脚新增「数据说明」小节（数据源与时效规则，TTL 取自 `utils.provenance`）；所有动态文本经 HTML 转义，Jinja2 autoescape 保持开启
+- Markdown 报告价格/营业时间后追加 `（来源，更新于…）`
+- 新增测试 `tests/test_provenance.py`
+
+### Fixed
+- 手册：高德周边酒店返回了价格时，`cost_display` 未赋值导致渲染抛 `UnboundLocalError`（被 deliver 吞掉后整本手册缺失）；现正确显示 `¥价格` 与来源
+
 ## [3.6.1] - 2026-11-18
 ### Added
 - **防幻觉校验**：新增 `utils/schema.py`（pydantic v2 模型 `Itinerary/Day/Slot/POIRef`，`extra="allow"` 不丢字段）与 `validate_itinerary(raw, candidates, distance_matrix=None)`：POI 须属于输入候选集（id 精确 / 名称规范化相等 / 名称包含且坐标 ≤100m），同日时间段不重叠、相邻交通时长 ≤ 距离矩阵估计×1.5（后两项仅记 issue）

@@ -15,7 +15,26 @@ def _fetch_json(url, timeout=8):
 
 import datetime as _dt
 
+def _attach_weather_meta(wx):
+    """溯源：给成功的天气结果加并行字段 meta（来源 + 抓取时间 + 6h TTL）。
+
+    type=historical 来自 Open-Meteo 往年同期数据；其余（forecast/live）来自高德天气。
+    """
+    if isinstance(wx, dict) and wx.get("success"):
+        from utils import provenance
+        provider = "open-meteo" if wx.get("type") == "historical" else "amap"
+        wx["meta"] = provenance.stamp(
+            wx.get("type"), provenance.SOURCE_WEATHER_PREFIX + provider,
+            ttl_hours=provenance.TTL_WEATHER_HOURS)
+    return wx
+
+
 def get_weather_for_dates(city="上海", start_date=None, days=2):
+    """获取指定日期天气（带溯源 meta）。详见 _get_weather_for_dates。"""
+    return _attach_weather_meta(_get_weather_for_dates(city, start_date, days))
+
+
+def _get_weather_for_dates(city="上海", start_date=None, days=2):
     """
     获取指定日期的天气（支持未来3天内预报，超过3天返回历史平均数据）
     start_date: datetime.date 对象，或 YYYY-MM-DD 字符串，默认为今天

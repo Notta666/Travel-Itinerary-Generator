@@ -280,6 +280,30 @@ class AMapClient:
             pass
         return []
 
+    def place_text_checked(self, keywords, region="", city_limit=True, page_size=3, show_fields=""):
+        """关键字搜索 POI 2.0，区分「查无」与「请求失败」（TR-3 POI 存在性校验用）。
+
+        返回: POI 列表（成功；可为空列表=高德确认查无）/ None（网络错误、限流、接口报错等，结果未知）
+        """
+        self._rate_limit()
+        if region == "顺德":
+            region = "佛山"
+        params = {"page_size": page_size, "page_num": 1, "output": "JSON", "keywords": keywords}
+        if region and "," not in region:
+            params["region"] = region
+            if city_limit:
+                params["city_limit"] = "true"
+        if show_fields:
+            params["show_fields"] = show_fields
+        url = _build_url("/v5/place/text", key=self.key, **params)
+        try:
+            data = _request(url)
+        except Exception:
+            return None
+        if not data or data.get("status") != "1":
+            return None  # _request 在网络失败时返回 {}
+        return data.get("pois", []) or []
+
     def place_around(self, location, radius=1000, types="", keywords="", sortrule="distance", page_size=10, show_fields=""):
         """
         周边搜索 POI 2.0

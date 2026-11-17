@@ -158,7 +158,9 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
                     combined_flyai["transport_legs"].append({
                         "label": f"Day {leg_start_day} {route_str}",
                         "type": _leg_type,
-                        "items": [items[0]]
+                        "items": [items[0]],
+                        "schedule_meta": sub_flyai[_leg_type].get("schedule_meta"),
+                        "price_meta": sub_flyai[_leg_type].get("price_meta"),
                     })
             if idx == 0:
                 for key in ("flight", "train", "hotel"):
@@ -167,7 +169,8 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
             else:
                 if "hotel" in sub_flyai and sub_flyai["hotel"].get("items"):
                     if "hotel" not in combined_flyai:
-                        combined_flyai["hotel"] = {"items": [], "source": "live", "cheapest": None, "count": 0}
+                        combined_flyai["hotel"] = {"items": [], "source": "live", "cheapest": None, "count": 0,
+                                                   "price_meta": sub_flyai["hotel"].get("price_meta")}
                     combined_flyai["hotel"]["items"].extend(sub_flyai["hotel"]["items"])
                     all_hotels = combined_flyai["hotel"]["items"]
                     if all_hotels:

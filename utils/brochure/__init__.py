@@ -5,6 +5,7 @@
 """
 import os, json, time, urllib.request, urllib.parse, re, datetime, logging, threading, html
 from utils.config import AMAP_KEY, BASE_DIR
+from utils import provenance
 
 # HTML 转义辅助：所有注入进手册 HTML 的外部/LLM 派生文本必须经此转义，防 XSS
 _esc = html.escape
@@ -18,6 +19,28 @@ def _safe_url(url):
     if scheme in ("javascript", "vbscript", "data"):
         return "#"
     return html.escape(u, quote=True)
+
+
+def _pv_html(meta, lead="", tag="p"):
+    """溯源小字行：「{lead}：来源 · 更新于 MM-DD HH:mm」。
+
+    - meta 不是 stamp 结构（旧数据/无溯源）→ 返回空串；
+    - source=llm → 来源处显示「AI 估算，请核实」；
+    - 已超过 TTL → 整行灰显（class="pv stale"）并追加「可能已变化，出行前请核实」；
+    - 所有动态文本（lead / 来源 / 时间）一律 HTML 转义。
+    """
+    if not provenance.is_stamped(meta):
+        return ""
+    label = _esc(provenance.source_label(meta.get("source")))
+    ts = _esc(provenance.fmt_fetched(meta))
+    text = f"{label} · 更新于 {ts}" if ts else label
+    if lead:
+        text = f"{_esc(str(lead))}：{text}"
+    stale = provenance.is_stale(meta)
+    if stale:
+        text += " · 可能已变化，出行前请核实"
+    cls = "pv stale" if stale else "pv"
+    return f'<{tag} class="{cls}">{text}</{tag}>'
 
 
 def _js_json(obj):
@@ -321,6 +344,14 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 cost_val = h.get("cost", "")
                 if not cost_val or cost_val == "?" or cost_val == "[]":
                     cost_display = "暂无报价"
+                    hotel_pv = ""
+                else:
+                    cost_display = f"¥{cost_val}"
+                    # 酒店价格由本次高德检索取得：来源 amap，更新时间=本次生成时间
+                    hotel_pv = _pv_html(
+                        h.get("cost_meta") or provenance.stamp(
+                            cost_val, provenance.SOURCE_AMAP, ttl_hours=provenance.TTL_PRICE_HOURS),
+                        "价格", tag="div")
                 cost_class = "hpr"
                 rating_val = str(h.get("rating", ""))
                 rating_display = rating_val if rating_val and rating_val != "?" else "--"
@@ -348,6 +379,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     f'<div class="hc-row2"><span class="{cost_class}">{_esc(cost_display)}</span>'
                     f'{f"<span class=hdi>{_esc(dist_display)}</span>" if dist_display else ""}'
                     f'{tel_html}{book_btn}</div>'
+                    f'{hotel_pv}'
                     f'</div>'
                     f'</div>'
                 )
@@ -417,6 +449,11 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 tags.append(f'<span class="t tr">{t_icon} {_esc(str(transit_text))}</span>')
             if not d_loc:
                 tags.append('<span class="t tr">📍 位置待核实</span>')
+            if d.get("verified") is False:
+                tags.append('<span class="t tr">⚠️ 未在地图中检索到，请核实</span>')
+            pv_lines = _pv_html(d.get("cost_meta"), "价格")
+            if d.get("opening_hours"):
+                pv_lines += _pv_html(d.get("opening_hours_meta"), f"营业时间 {d['opening_hours']}")
             overlay = f'<div class="po">{_esc(name_short)}</div>' if not has_photo else ""
             all_items_flat.append({"name":d["name"],"loc":list(d_loc) if d_loc else None,"unresolved": not d_loc,"type":is_food,"day":day["day"],"time":d.get("time_slot","")})
             day_html += f"""
@@ -425,6 +462,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 <div class="cc">
                     <h3>{icon} {_esc(d['name'])}</h3>
                     <div class="tw">{' '.join(tags)}</div>
+                    {pv_lines}
                     {f'<p class="ad">{_esc(d.get("address",""))[:45]}</p>' if d.get("address") else ''}
                     {f'<p class="nt">{_esc(d.get("note",""))}</p>' if d.get("note") else ''}
                 </div>
@@ -490,11 +528,13 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
         for s in wx_suggestions[:3]:
             wx_sug += f'<div class="ws">{_esc(str(s))}</div>'
         w_city = _esc(str(weather.get("city", "")))
+        wx_pv = _pv_html(weather.get("meta"), "天气", tag="div")
         whtml = f"""
     <div class="sec wx">
         <h2>🌤️ {w_city} 天气预报</h2>
         <div class="wf-row">{cards}</div>
         <div class="ws-row">{wx_sug}</div>
+        {wx_pv}
     </div>"""
     elif weather:
         # 天气源全部失败：诚实标注缺失，不展示伪造数据（数据诚信铁律）
@@ -613,8 +653,14 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                     "items": [items[0]] if items else []
                 })
         transport_rows = []
+        transport_pv = []
         for leg in _tlegs:
             if not leg.get("items"): continue
+            _leg_bucket = _bk.get(leg.get("type", ""), {}) if isinstance(_bk.get(leg.get("type", ""), {}), dict) else {}
+            _leg_pv = _pv_html(leg.get("schedule_meta") or _leg_bucket.get("schedule_meta"),
+                               f"{leg.get('label', '交通')} 班次与价格", tag="div")
+            if _leg_pv:
+                transport_pv.append(_leg_pv)
             _bi = leg["items"][0]
             _pt = _bi["price"]
             _jt = _bi.get("jump_url","")
@@ -713,6 +759,7 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                 </tbody>
             </table>
         </div>
+        {''.join(transport_pv)}
     </div>"""
 
         # 酒店备选
@@ -722,12 +769,15 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
             if len(city.split(",")) > 0:
                 _city = city.split(",")[0]
             _source = _bk["hotel"].get("source", "实时查询")
-            hotel_groups = [{"city": _city, "source": _source, "items": _bk["hotel"]["items"]}]
+            hotel_groups = [{"city": _city, "source": _source, "items": _bk["hotel"]["items"],
+                             "price_meta": _bk["hotel"].get("price_meta")}]
         hotel_items_html = []
         for hg in hotel_groups:
             c = hg["city"]
             hlist = hg["items"]
             hotel_items_html.append(f'<h3 style="font-size:14px; margin: 10px 0 5px; color: var(--text1);">📍 {_esc(str(c))} 住宿备选</h3>')
+            _hotel_meta = hg.get("price_meta") or _bk.get("hotel", {}).get("price_meta")
+            hotel_items_html.append(_pv_html(_hotel_meta, "酒店价格", tag="div"))
             for i, _bh in enumerate(hlist):
                 _name = _bh.get("name", "酒店")
                 _price = _bh.get("price")
@@ -775,7 +825,9 @@ def generate_brochure(itinerary, city, food_highlights=None, overall_note="",
                                 <summary style="font-size:11px; font-weight:600; color:#3b82f6;">查看门票详情 ▾</summary>
                                 <div style="margin-top:6px; padding:8px; background:var(--tbg); border-radius:6px; font-size:11px;">
                                     {f'<div style="margin-bottom:6px; color:var(--text2);">🕒 开放时间: {open_hours_esc}</div>' if open_hours else ''}
+                                    {_pv_html(_tdi.get("opening_hours_meta"), "开放时间", tag="div") if open_hours else ''}
                                     {f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><span>🎟️ 门票</span><div><span style="color:#f59e0b; margin-right:8px; font-weight:bold;">¥{_pm}</span><a class="btn-booking" href="{_safe_url(_bu)}" target="_blank" style="padding:2px 8px;">飞猪预订</a></div></div>' if _pm else ''}
+                                    {_pv_html(_tdi.get("price_meta"), "门票", tag="div")}
                                     {f'<div style="margin-top:4px; color:var(--text2); font-size:10px;">{note_text_esc}</div>' if note_text else ''}
                                 </div>
                             </details>

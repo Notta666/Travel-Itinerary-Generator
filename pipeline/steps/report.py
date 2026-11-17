@@ -2,6 +2,7 @@ import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
+from utils import provenance
 logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
@@ -41,8 +42,12 @@ def step_8_generate_report(context):
                 if p.get("address"): report += f"   📍 {p['address']}\n"
                 parts = []
                 if p.get("rating"): parts.append(f"⭐ {p['rating']}")
-                if p.get("cost"): parts.append(f"💰 ¥{p['cost']}")
+                if p.get("cost"): parts.append(f"💰 ¥{p['cost']}{provenance.inline_note(p.get('cost_meta'))}")
                 if parts: report += f"   {' | '.join(parts)}\n"
+                if p.get("opening_hours"):
+                    report += f"   🕒 营业时间 {p['opening_hours']}{provenance.inline_note(p.get('opening_hours_meta'))}\n"
+                if p.get("verified") is False:
+                    report += "   ⚠️ 未在地图中检索到，请核实\n"
                 if p.get("transit"):
                     tt = p["transit"]
                     if "步行" in tt or "走" in tt: ti = "🚶"
@@ -61,7 +66,7 @@ def step_8_generate_report(context):
                     report += "\n"
                     parts = []
                     if f.get("cuisine"): parts.append(f"🍳 {f['cuisine']}")
-                    if f.get("cost"): parts.append(f"💰 {f['cost']}")
+                    if f.get("cost"): parts.append(f"💰 {f['cost']}{provenance.inline_note(f.get('cost_meta'))}")
                     if f.get("rating"): parts.append(f"⭐ {f['rating']}")
                     if parts: report += f"   {' | '.join(parts)}\n"
                     if f.get("note"): report += f"   💬 {f['note']}\n"
