@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -13,9 +14,9 @@ BASE = PROJECT_ROOT
 
 def step_9_deliver(context):
     """归档 + 生成图文手册（含出行建议）"""
-    print(f"\n{'='*50}")
-    print(f"Step 9/9: 交付完成 ✅")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 9/9: 交付完成 ✅")
+    logger.info(f"{'='*50}")
 
     if BROCHURE_ENABLED and context.get("itinerary"):
         try:
@@ -40,9 +41,9 @@ def step_9_deliver(context):
                           research_source=prefs.get("research_source", ""),
                           flyai_prices=context.get("flyai_prices", {}))
             context["brochure_path"] = path
-            print(f"  📖 手册: {path}")
+            logger.info(f"  📖 手册: {path}")
         except Exception as e:
-            print(f"  ⚠️ 手册生成跳过: {e}")
+            logger.warning(f"  ⚠️ 手册生成跳过: {e}")
 
     print(f"\n  📄 HTML地图: {context.get('html_path','')}")
     print(f"  📄 MD报告:  {context.get('report_path','')}")

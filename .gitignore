@@ -54,3 +54,7 @@ IDEA.md
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Docker / local safety
+*.bak_*
+data/tasks.db*

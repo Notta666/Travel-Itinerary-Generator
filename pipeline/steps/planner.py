@@ -2,10 +2,11 @@
 Step 6: 对抗性辩论路线规划 (方案A / 方案B / 综合)
 ====================================================
 """
-import json, copy, time, logging, re
+import json, copy, time, re
 from concurrent.futures import ThreadPoolExecutor
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 
 
 def _normalize_name(name):
@@ -83,9 +84,9 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
 
     from utils.llm import call_deepseek
 
-    print(f"\n{'='*50}")
-    print(f"Step 6/9: 多方案路线辩论规划 ✨")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 6/9: 多方案路线辩论规划 ✨")
+    logger.info(f"{'='*50}")
     city = context["city"]
     days = context["days"]
     pois = context["poi_enriched"]
@@ -93,7 +94,7 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
     food_list = context.get("food_recommendations", [])
 
     if not pois:
-        print("  ⚠️ 无POI, 跳过")
+        logger.warning("  ⚠️ 无POI, 跳过")
         return context
 
     if amap is None:
@@ -285,13 +286,13 @@ def step_6_plan_itinerary(context, amap=None, progress_callback=None):
         bear_result = bear_raw if isinstance(bear_raw, dict) else {}
         # Bear返回0天时重试一次
         if isinstance(bear_result, dict) and len(bear_result.get('days',[]) or []) == 0:
-            print("  ⚠️ Bear返回0天，重试一次...")
+            logger.warning("  ⚠️ Bear返回0天，重试一次...")
             try:
                 bear_retry = call_deepseek("返回纯JSON。", bear_prompt, temperature=0.4, max_tokens=6000)
                 bear_result = bear_retry if isinstance(bear_retry, dict) else bear_result
             except Exception as e:
-                print(f"  ⚠️ Bear 重试失败: {e}")
-        print(f"  📋 方案A → {len(bull_result.get('days',[]) or [])} 天 | 方案B → {len(bear_result.get('days',[]) or [])} 天")
+                logger.warning(f"  ⚠️ Bear 重试失败: {e}")
+        logger.info(f"  📋 方案A → {len(bull_result.get('days',[]) or [])} 天 | 方案B → {len(bear_result.get('days',[]) or [])} 天")
 
         # ---- Fusion Prompt (压缩Bull/Bear摘要) ----
         def _summarize_plan(result):
@@ -345,12 +346,12 @@ Bear悠闲避雷方案摘要: {bear_summary}
   "overall_note":"【景点与美食辩论纪要】... \\n【总体行程说明】...",
   "food_highlights":["必吃1","必吃2"]}}"""
 
-        print("  ⚖️ Fusion 综合裁决中...")
+        logger.info("  ⚖️ Fusion 综合裁决中...")
         fusion_raw = call_deepseek("首席规划官。返回纯JSON。", fusion_prompt, temperature=0.3, max_tokens=8000)
         fusion_result = _safe_parse_fusion(fusion_raw)
         days_out = fusion_result.get("days", [])
     except Exception as e:
-        print(f"  ⚠️ LLM 路线规划规划失败: {e}，将启动规则引擎降级规划方案。")
+        logger.warning(f"  ⚠️ LLM 路线规划规划失败: {e}，将启动规则引擎降级规划方案。")
         # 降级方案：按天平均分配 POI，并关联最近的美食
         days_out = []
         overall_note = "本地降级规则引擎生成的行程规划，暂未经过 LLM 优化。"
@@ -460,19 +461,19 @@ Bear悠闲避雷方案摘要: {bear_summary}
             s_type = s.get("type", "sight")
             name = s.get("name", "").strip()
             if not name:
-                print(f"  ⚠️ 跳过缺 name 的 slot: {s}")
+                logger.warning(f"  ⚠️ 跳过缺 name 的 slot: {s}")
                 continue
             slot_city = s.get("city", "").strip()
 
             norm_name = _normalize_name(name)
             if s_type == "food":
                 if norm_name in seen_foods:
-                    print(f"  ⚠️ 去重跳过重复美食: {name}")
+                    logger.warning(f"  ⚠️ 去重跳过重复美食: {name}")
                     continue
                 seen_foods.add(norm_name)
             else:
                 if norm_name in seen_sights:
-                    print(f"  ⚠️ 去重跳过重复景点: {name}")
+                    logger.warning(f"  ⚠️ 去重跳过重复景点: {name}")
                     continue
                 seen_sights.add(norm_name)
 
@@ -539,8 +540,8 @@ Bear悠闲避雷方案摘要: {bear_summary}
     context["itinerary"] = itinerary
     context["food_highlights"] = fusion_result.get("food_highlights", [])
     context["overall_note"] = fusion_result.get("overall_note", "")
-    print(f"  ✅ Fusion完成: {len(itinerary)} 天")
+    logger.info(f"  ✅ Fusion完成: {len(itinerary)} 天")
     for d in itinerary:
-        print(f"    Day {d['day']} [{d['label']}]: {len(d['pois'])}景点 + {len(d.get('foods',[]))}餐厅")
+        logger.info(f"    Day {d['day']} [{d['label']}]: {len(d['pois'])}景点 + {len(d.get('foods',[]))}餐厅")
     _report("plan_itinerary", f"✅ Fusion完成: {len(itinerary)} 天", 60)
     return context

@@ -1,4 +1,4 @@
-import sys, os, time, copy, argparse, logging, threading
+import sys, os, time, copy, argparse, threading
 from concurrent.futures import ThreadPoolExecutor
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +25,8 @@ from pipeline.steps.deliver import step_9_deliver
 # Multi-city orchestrator
 from pipeline.multi_city_orchestrator import run_multi_city
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger  # noqa: E402
+logger = get_logger("travel_pipeline")
 
 _amap = None
 _xhs = None
@@ -59,17 +60,17 @@ class StepTimer:
     def __exit__(self, *_):
         elapsed = time.time() - self.t0
         self.timings_list.append((self.name, elapsed))
-        print(f"  ⏱️  {self.name} 耗时: {elapsed:.1f}s")
+        logger.info(f"  ⏱️  {self.name} 耗时: {elapsed:.1f}s")
 
 def _print_timing_summary(timings):
     if not timings: return
     total = sum(t for _, t in timings)
-    print(f"\n{'='*55}\n⏱️  各步骤耗时汇总\n{'='*55}")
+    logger.info(f"\n{'='*55}\n⏱️  各步骤耗时汇总\n{'='*55}")
     for name, elapsed in timings:
         pct = elapsed / total * 100 if total > 0 else 0
         bar = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
-        print(f"  {name:<23s} {elapsed:>6.1f}s {pct:>5.1f}%  {bar}")
-    print(f"{'='*55}\n  总计: {total:>6.1f}s  100%\n{'='*55}")
+        logger.info(f"  {name:<23s} {elapsed:>6.1f}s {pct:>5.1f}%  {bar}")
+    logger.info(f"{'='*55}\n  总计: {total:>6.1f}s  100%\n{'='*55}")
 
 def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None, progress_callback=None, multi_cities=None, cancel_event=None):
     pipeline_t0 = time.time()
@@ -132,13 +133,13 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
                 context = step_9_deliver(context)
 
         except PipelineStoppedError as e:
-            print(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
+            logger.error(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
         except Exception as e:
             logger.exception("pipeline 异常终止: %s", e)
             context["error"] = str(e)
             return context
         finally:
-            print(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
+            logger.info(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
             _print_timing_summary(timings)
         _report("done", "✅ 全部完成", 100)
         return context
@@ -147,12 +148,12 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
     try:
         start_city = prefs.get("start_city", "")
         if not start_city:
-            print("🔍 检测到未指定出发地，正在获取您的实时位置...")
+            logger.info("🔍 检测到未指定出发地，正在获取您的实时位置...")
             start_city = get_amap().get_ip_location()
             if start_city:
-                print(f"📍 成功获取您的实时位置为起点: {start_city}")
+                logger.info(f"📍 成功获取您的实时位置为起点: {start_city}")
             else:
-                print("⚠️ 实时位置获取失败，默认不设置起点")
+                logger.warning("⚠️ 实时位置获取失败，默认不设置起点")
                 start_city = ""
             prefs["start_city"] = start_city
 
@@ -169,7 +170,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
             with StepTimer("Step 2 小红书调研", timings):
                 context = step_2_research(context, xhs=get_xhs(), progress_callback=progress_callback)
         else:
-            print("⏭️  跳过 Step 2 小红书调研 (用户配置禁用)")
+            logger.info("⏭️  跳过 Step 2 小红书调研 (用户配置禁用)")
             context.update({"research_notes": [], "note_contents": [], "xhs_pois": {"sights": [], "foods": []}, "xhs_sight_names": [], "xhs_food_data": []})
 
         _check_stop(cancel_event, "Step 3")
@@ -183,7 +184,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
             with StepTimer("Step 4 POI丰富+美食", timings):
                 context = step_4_enrich(context)
         else:
-            print("⏭️  跳过 Step 4 POI丰富+美食 (用户配置禁用)")
+            logger.info("⏭️  跳过 Step 4 POI丰富+美食 (用户配置禁用)")
             context["poi_enriched"] = [
                 {
                     "name": p["name"],
@@ -201,7 +202,7 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
             with StepTimer("Step 5 距离矩阵", timings):
                 context = step_5_distance_matrix(context)
         else:
-            print("⏭️  跳过 Step 5 距离矩阵 (用户配置禁用)")
+            logger.info("⏭️  跳过 Step 5 距离矩阵 (用户配置禁用)")
             context["distance_matrix"] = {"matrix": [], "labels": []}
 
         _check_stop(cancel_event, "Step 5.5")
@@ -265,13 +266,13 @@ def run_pipeline(city, days=2, use_research=False, manual_pois=None, prefs=None,
             context = step_9_deliver(context)
 
     except PipelineStoppedError as e:
-        print(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
+        logger.error(f"\n🛑 Pipeline 已停止: {e}\n  已完成的步骤成果已保留。")
     except Exception as e:
         logger.exception("pipeline 异常终止: %s", e)
         context["error"] = str(e)
         return context
     finally:
-        print(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
+        logger.info(f"\n⏱️  Pipeline 总耗时: {time.time() - pipeline_t0:.1f}s")
         _print_timing_summary(timings)
 
     _report("done", "✅ 全部完成", 100)
@@ -297,7 +298,7 @@ if __name__ == "__main__":
         if args.days: days = args.days
         if args.pois: pois = [p.strip() for p in args.pois.split(",") if p.strip()]
         if args.start_city: prefs["start_city"] = args.start_city
-        print(f"\\n{'='*50}\\n🎯 目标: {args.goal}\\n{'='*50}")
+        logger.info(f"\\n{'='*50}\\n🎯 目标: {args.goal}\\n{'='*50}")
         run_pipeline(city, days, args.research, pois, prefs, cancel_event=cancel_evt)
     else:
         city = args.city or "上海"

@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -21,13 +22,13 @@ def step_7_query_tickets(context):
 
     FlyAI 不可用或失败时静默跳过，不影响其他步骤。
     """
-    print(f"\n{'='*50}")
-    print(f"Step 7/9: 景点门票价格查询 🎫")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 7/9: 景点门票价格查询 🎫")
+    logger.info(f"{'='*50}")
 
     flyai = context.get("flyai_prices") or {}
     if not flyai.get("available"):
-        print("  ⏭️  跳过门票查询（FlyAI 不可用或无数据）")
+        logger.info("  ⏭️  跳过门票查询（FlyAI 不可用或无数据）")
         return context
 
     from utils.flyai_api import FlyAIApiClient
@@ -36,7 +37,7 @@ def step_7_query_tickets(context):
     itinerary = context.get("itinerary", [])
     city = context["city"]
     if not itinerary:
-        print("  ⏭️  无行程数据，跳过门票查询")
+        logger.info("  ⏭️  无行程数据，跳过门票查询")
         return context
 
     # 收集所有景点名称（去重）
@@ -50,7 +51,7 @@ def step_7_query_tickets(context):
                 poi_names.append({"name": name, "city": city})
 
     if not poi_names:
-        print("  ⏭️  无景点数据，跳过门票查询")
+        logger.info("  ⏭️  无景点数据，跳过门票查询")
         return context
 
     ticket_data = {}
@@ -69,7 +70,7 @@ def step_7_query_tickets(context):
     # 第3级降级: Gaode POI 搜索获取门票价格（为 FlyAI 失败的 POI 兜底）
     fail_names = [n for n, td in ticket_data.items() if not td or td.get("source") == "fail"]
     if fail_names and itinerary:
-        print(f"  🔄 尝试 Gaode 兜底门票: {len(fail_names)} 个景点")
+        logger.info(f"  🔄 尝试 Gaode 兜底门票: {len(fail_names)} 个景点")
         # 建立 POI 名称→location 的映射（从 itinerary 取）
         name_to_loc = {}
         for day in itinerary:
@@ -94,7 +95,7 @@ def step_7_query_tickets(context):
                                 cost_val = float(re.sub(r"[¥￥,，\s]", "", str(cost_str)))
                                 if 10 <= cost_val <= 9999:
                                     ticket_data[n] = {"price_min": cost_val, "price_max": cost_val, "source": "gaode"}
-                                    print(f"  🎫 {n}: ¥{cost_val:.0f}/人 (Gaode)")
+                                    logger.info(f"  🎫 {n}: ¥{cost_val:.0f}/人 (Gaode)")
                                     break
                             except ValueError:
                                 continue
@@ -102,7 +103,7 @@ def step_7_query_tickets(context):
                 continue
         gaode_ok = sum(1 for td in ticket_data.values() if td and td.get("source") == "gaode")
         if gaode_ok:
-            print(f"  ✅ Gaode 门票兜底成功: {gaode_ok}/{len(fail_names)}")
+            logger.info(f"  ✅ Gaode 门票兜底成功: {gaode_ok}/{len(fail_names)}")
 
     flyai["tickets"] = ticket_data
     context["flyai_prices"] = flyai
@@ -111,9 +112,9 @@ def step_7_query_tickets(context):
     for name, td in ticket_data.items():
         if td and td.get("source") != "fail":
             src_tag = {"regex": "📋", "ai_search": "🔍"}.get(td.get("source", ""), "❓")
-            print(f"  🎫 {name}: ¥{td['price_min']}~{td['price_max']}/人 {src_tag}")
+            logger.info(f"  🎫 {name}: ¥{td['price_min']}~{td['price_max']}/人 {src_tag}")
         else:
-            print(f"  ⚪ {name}: 价格未知（按百分比估算）")
+            logger.info(f"  ⚪ {name}: 价格未知（按百分比估算）")
 
-    print(f"  ✅ 门票查询完成: {found}/{len(ticket_data)} 个景点有价格")
+    logger.info(f"  ✅ 门票查询完成: {found}/{len(ticket_data)} 个景点有价格")
     return context

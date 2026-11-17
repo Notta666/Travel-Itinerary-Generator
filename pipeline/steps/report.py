@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -11,9 +12,9 @@ amap = AMapClient()
 
 def step_8_generate_report(context):
     """Markdown报告: 行程安排 + 推荐餐厅 + 必吃推荐 + 规划说明"""
-    print(f"\n{'='*50}")
-    print(f"Step 8/9: 攻略报告 📝")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 8/9: 攻略报告 📝")
+    logger.info(f"{'='*50}")
     city = context["city"]
     itinerary = context.get("itinerary", [])
     notes = context.get("research_notes", [])
@@ -78,5 +79,5 @@ def step_8_generate_report(context):
     with open(path, "w", encoding="utf-8") as f:
         f.write(report)
     context["report_path"] = path
-    print(f"  ✅ 报告: {path}")
+    logger.info(f"  ✅ 报告: {path}")
     return context

@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging, math
+import sys, os, json, time, copy, re, datetime, math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -28,9 +29,9 @@ def _approx_dist_km(p1, p2):
 
 def step_3_geocode(context, manual_pois=None):
     """高德地理编码: 小红书提取的景点名 → 坐标 (批量并行)"""
-    print(f"\n{'='*50}")
-    print(f"Step 3/9: POI地理编码 🗺️ (批量并行)")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 3/9: POI地理编码 🗺️ (批量并行)")
+    logger.info(f"{'='*50}")
     city = context["city"]
 
     pois_to_code = manual_pois or context.get("manual_pois", [])
@@ -38,7 +39,7 @@ def step_3_geocode(context, manual_pois=None):
         pois_to_code = context.get("xhs_sight_names", [])
 
     if not pois_to_code:
-        print("  ⚠️ 无可编码POI，使用内置默认景点")
+        logger.warning("  ⚠️ 无可编码POI，使用内置默认景点")
         default_pois = {}
         try:
             default_pois_path = os.path.join(PROJECT_ROOT, "data", "default_pois.json")
@@ -46,7 +47,7 @@ def step_3_geocode(context, manual_pois=None):
                 with open(default_pois_path, "r", encoding="utf-8") as f:
                     default_pois = json.load(f)
         except Exception as e:
-            print(f"  ⚠️ 读取本地景点数据库失败: {e}")
+            logger.warning(f"  ⚠️ 读取本地景点数据库失败: {e}")
 
         if not default_pois:
             default_pois = {
@@ -56,7 +57,7 @@ def step_3_geocode(context, manual_pois=None):
             }
         pois_to_code = default_pois.get(city, [])
         if not pois_to_code:
-            print(f"  ⚠️ 未知城市 '{city}' 无内置默认景点数据，且未提取到有效POI")
+            logger.warning(f"  ⚠️ 未知城市 '{city}' 无内置默认景点数据，且未提取到有效POI")
             context["poi_geocoded"] = []
             return context
 
@@ -65,7 +66,7 @@ def step_3_geocode(context, manual_pois=None):
     sight_city_map = context.setdefault("sight_city_map", {})
     missing_pois = [n for n in pois_to_code if n not in sight_city_map]
     if missing_pois and len(cities_list) > 1:
-        print(f"  🧠 检测到有 {len(missing_pois)} 个景点缺失城市归属信息，启动 LLM 快速识别...")
+        logger.info(f"  🧠 检测到有 {len(missing_pois)} 个景点缺失城市归属信息，启动 LLM 快速识别...")
         map_prompt = f"""你是一个旅行地理专家。
 请根据目的地城市列表 {cities_list}，判断以下景点名称分别属于哪一个目的地城市（必须只能是列表中的一个，如果景点不在任何一个城市，请选择最接近的目的城市）：
 景点列表：{missing_pois}
@@ -82,9 +83,9 @@ def step_3_geocode(context, manual_pois=None):
                 for k, v in map_res.items():
                     if k in missing_pois and v in cities_list:
                         sight_city_map[k] = v
-                print(f"     ✅ 识别完成: {map_res}")
+                logger.info(f"     ✅ 识别完成: {map_res}")
         except Exception as e:
-            print(f"     ⚠️ LLM 城市识别失败: {e}")
+            logger.warning(f"     ⚠️ LLM 城市识别失败: {e}")
 
     amap = get_amap()
     city_centers = []
@@ -165,7 +166,7 @@ def step_3_geocode(context, manual_pois=None):
         if (is_drift or not coord) and cities_list:
             for c_prefix in cities_list[:3]:
                 fallback_name = f"{c_prefix}{name}"
-                print(f"  ⚠️ 发现定位漂移或失败: '{name}'。尝试使用前缀 '{fallback_name}' 重新编码...")
+                logger.warning(f"  ⚠️ 发现定位漂移或失败: '{name}'。尝试使用前缀 '{fallback_name}' 重新编码...")
                 fallback_coord = amap.geocode(fallback_name)
                 if fallback_coord:
                     valid_fallback = False
@@ -180,12 +181,12 @@ def step_3_geocode(context, manual_pois=None):
                     if valid_fallback:
                         coord = fallback_coord
                         is_drift = False
-                        print(f"  ✅ 纠偏成功: '{name}' 修正为 '{fallback_name}' → ({coord[0]:.4f}, {coord[1]:.4f})")
+                        logger.info(f"  ✅ 纠偏成功: '{name}' 修正为 '{fallback_name}' → ({coord[0]:.4f}, {coord[1]:.4f})")
                         break
 
         if coord and not is_drift:
             geocoded.append({"name": name, "location": coord, "geo_status": "resolved"})
-            print(f"  ✅ {name:20s} → ({coord[0]:.4f}, {coord[1]:.4f})")
+            logger.info(f"  ✅ {name:20s} → ({coord[0]:.4f}, {coord[1]:.4f})")
         else:
             # 数据诚信铁律：编码失败 / 严重漂移且无法纠偏时，不伪造伪坐标。
             # 显式标记「位置待核实」，由下游地图/手册跳过连线并提示用户人工核对。
@@ -196,11 +197,11 @@ def step_3_geocode(context, manual_pois=None):
                 "geo_reason": "drift" if is_drift else "failed",
             })
             if is_drift:
-                print(f"  🚨 {name:20s} → 严重定位漂移且无法纠偏，标注「位置待核实」（不生成伪坐标）")
+                logger.warning(f"  🚨 {name:20s} → 严重定位漂移且无法纠偏，标注「位置待核实」（不生成伪坐标）")
             else:
-                print(f"  ⚠️ {name:20s} → 编码失败，标注「位置待核实」（不生成伪坐标）")
+                logger.warning(f"  ⚠️ {name:20s} → 编码失败，标注「位置待核实」（不生成伪坐标）")
 
     context["poi_geocoded"] = geocoded
     n = len(geocoded)
-    print(f"  成功: {n}/{len(pois_to_code)}")
+    logger.info(f"  成功: {n}/{len(pois_to_code)}")
     return context

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0] - 2026-11-17
+### Added
+- **CI 测试 job**：`.github/workflows/lint.yml` 新增 `test` job（ubuntu / Python 3.11 / `pytest tests -q`，使用占位环境变量，无真实密钥）
+- **容器化**：新增 `Dockerfile`（python:3.11-slim、非 root、HEALTHCHECK `/health`）、`docker-compose.yml`（宿主机仅绑定 127.0.0.1，卷挂载 `data/`、`outputs/`）、`.dockerignore`
+- **统一日志**：新增 `utils/log.py`（`get_logger` / `log_step` / `set_task_id`，`LOG_FORMAT=json|text`，json 含 `ts, level, logger, msg, task_id, step, elapsed_ms`）
+
+### Changed
+- `pipeline/` 与 `webapp/` 下的 `print(` 统一替换为 logger 调用（CLI 最终交付路径输出保留 print）
+- README：修正测试数量，新增“Docker 运行”“日志”小节
+
+### Removed
+- 删除空文件 `webapp/tasks.db`（实际数据库为 `data/tasks.db`）；`.gitignore` 增补 `*.bak_*`、`data/tasks.db*`
+
 ## [3.5.8] - 2026-08-14
 ### Security
 - **XSS 根除（P0×2）**：`utils/brochure/renderer.py` 启用 Jinja2 `select_autoescape` 模板级转义；`__init__.py` `all_hotels_json` 经 `_js_json()` 中和 `</script>`（此前仅修 map_items_json/popup）。city/cover_extra/accommodation/tips/美食/rating/transit/天气字段现均转义落盘

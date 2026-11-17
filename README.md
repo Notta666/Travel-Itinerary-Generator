@@ -100,13 +100,38 @@ python webapp/main.py
 2. **查看内置使用说明**：页面底部提供详尽的使用说明与指引，方便新用户快速上手。
 3. **查看与下载离线攻略**：任务提交后，提供后台异步进度条，完成后网页端直接预览交互手册，并支持一键下载单文件 HTML 离线查看。
 
-> 服务网络与安全：WebApp 默认监听 `0.0.0.0:8080`（可通过环境变量 `HOST` 配置，如 `HOST=127.0.0.1` 仅本机访问）。公网部署时可通过设置 `API_TOKEN` 环境变量启用鉴权保护，系统同时内置了 per-IP 速率限制（默认 10 次/分钟）。跨域访问受 CORS 策略保护（开发模式需同时设置 `CORS_ORIGINS=*` 与 `CORS_ALLOW_ALL=1`）。
+> 服务网络与安全：WebApp 默认监听 `0.0.0.0:8080`（可通过环境变量 `HOST` / `PORT` 配置，如 `HOST=127.0.0.1` 仅本机访问）。公网部署时可通过设置 `API_TOKEN` 环境变量启用鉴权保护，系统同时内置了 per-IP 速率限制（默认 10 次/分钟）。跨域访问受 CORS 策略保护（开发模式需同时设置 `CORS_ORIGINS=*` 与 `CORS_ALLOW_ALL=1`）。
+
+### Docker 运行
+
+```bash
+cp .env.example .env          # 填入 DEEPSEEK_API_KEY / AMAP_KEY（.env 不会被打入镜像）
+docker compose up -d --build  # 构建并后台启动
+# 访问 http://127.0.0.1:8000
+docker compose logs -f app    # 查看日志
+docker compose down           # 停止
+```
+
+- 容器内监听 `0.0.0.0:8000`，宿主机默认仅绑定 `127.0.0.1`（如需局域网访问请自行修改 `docker-compose.yml` 的端口映射，并务必配置 `API_TOKEN`）。
+- `./data` 与 `./outputs` 以卷挂载，任务数据库与生成产物保存在宿主机；健康检查为 `GET /health`。
+- 容器以非 root 用户（uid 1000）运行；Linux 下请确保挂载目录对该用户可写。
+
+### 日志
+
+通过环境变量 `LOG_FORMAT` 切换日志格式（`pipeline/` 与 `webapp/` 统一使用 `utils/log.py`）：
+
+| 取值 | 说明 |
+|:---|:---|
+| `text`（默认） | 仅输出消息本体，保持原 CLI 观感 |
+| `json` | 每行一条 JSON：`ts, level, logger, msg, task_id, step, elapsed_ms`，便于收集与检索 |
+
+可选 `LOG_LEVEL`（默认 `INFO`）。示例：`LOG_FORMAT=json python webapp/main.py`。
 
 ### 测试
 
 ```bash
 python -m pip install pytest
-python -m pytest tests/ -q   # 45 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
+python -m pytest tests/ -q   # 98 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
 ```
 
 ---

@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -11,9 +12,9 @@ amap = AMapClient()
 
 def step_4_enrich(context):
     """逆地理编码拿地址 → 小红书美食列表对接高德坐标验证 (批量并行)"""
-    print(f"\n{'='*50}")
-    print(f"Step 4/9: POI丰富 + 美食对接 🍽️ (批量并行)")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 4/9: POI丰富 + 美食对接 🍽️ (批量并行)")
+    logger.info(f"{'='*50}")
     enriched = []
     city = context["city"]
     all_food = []
@@ -70,7 +71,7 @@ def step_4_enrich(context):
             "highlights": sight_meta.get(name, {}).get("highlights", "无")
         }
         enriched.append(poi_info)
-        print(f"  ✅ {name:20s} | {poi_info.get('address','')[:30]}")
+        logger.info(f"  ✅ {name:20s} | {poi_info.get('address','')[:30]}")
 
     xhs_foods = context.get("xhs_food_data", [])
     prefs = context.get("preferences", {})
@@ -95,7 +96,7 @@ def step_4_enrich(context):
 
         missing_foods = [n for n in foods_to_geocode if n not in food_city_map]
         if missing_foods and len(cities_list) > 1:
-            print(f"  🧠 检测到有 {len(missing_foods)} 家餐厅缺失城市归属信息，启动 LLM 快速识别...")
+            logger.info(f"  🧠 检测到有 {len(missing_foods)} 家餐厅缺失城市归属信息，启动 LLM 快速识别...")
             map_prompt = f"""你是一个旅行美食专家。
 请根据目的地城市列表 {cities_list}，判断以下餐厅名称分别属于哪一个目的地城市（必须只能是列表中的一个，如果餐厅不在任何一个城市，请选择最接近的目的城市）：
 餐厅列表：{missing_foods}
@@ -112,9 +113,9 @@ def step_4_enrich(context):
                     for k, v in map_res.items():
                         if k in missing_foods and v in cities_list:
                             food_city_map[k] = v
-                    print(f"     ✅ 识别完成: {map_res}")
+                    logger.info(f"     ✅ 识别完成: {map_res}")
             except Exception as e:
-                print(f"     ⚠️ LLM 城市识别失败: {e}")
+                logger.warning(f"     ⚠️ LLM 城市识别失败: {e}")
 
         def _smart_geocode_food(name):
             f_city = food_city_map.get(name, "").strip()
@@ -211,13 +212,13 @@ def step_4_enrich(context):
                             break
 
     if all_food:
-        print(f"  🍴 小红书推荐美食: {len(all_food)} 家")
+        logger.info(f"  🍴 小红书推荐美食: {len(all_food)} 家")
         for f in all_food[:5]:
-            print(f"     {f['name']} — {f.get('cuisine','')}")
+            logger.info(f"     {f['name']} — {f.get('cuisine','')}")
     else:
-        print(f"  ⚠️ 小红书无美食数据")
+        logger.warning(f"  ⚠️ 小红书无美食数据")
 
     context["poi_enriched"] = enriched
     context["food_recommendations"] = all_food[:15]
-    print(f"  完成: {len(enriched)}个POI + {len(all_food[:15])}家推荐餐厅")
+    logger.info(f"  完成: {len(enriched)}个POI + {len(all_food[:15])}家推荐餐厅")
     return context

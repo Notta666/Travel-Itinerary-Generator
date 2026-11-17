@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -11,12 +12,12 @@ amap = AMapClient()
 
 def step_5_distance_matrix(context):
     """高德驾车路径规划API: 计算POI间距离/时长"""
-    print(f"\n{'='*50}")
-    print(f"Step 5/9: 距离矩阵 📏")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 5/9: 距离矩阵 📏")
+    logger.info(f"{'='*50}")
     pois = context["poi_enriched"]
     if len(pois) < 2:
-        print("  ⚠️ POI不足, 跳过")
+        logger.warning("  ⚠️ POI不足, 跳过")
         return context
     # 位置未解析的 POI（location 为 None）跳过，避免 TypeError，也不参与距离计算
     tuples = [(p["name"], p["location"][0], p["location"][1]) for p in pois if p.get("location")]
@@ -26,10 +27,12 @@ def step_5_distance_matrix(context):
         matrix = amap.distance_matrix(tuples)
     context["distance_matrix"] = matrix
     labels, mat = matrix["labels"], matrix["matrix"]
-    print(f"  矩阵: {len(labels)}x{len(labels)}")
+    logger.info(f"  矩阵: {len(labels)}x{len(labels)}")
     for i in range(len(labels)):
         for j in range(i+1, min(i+3, len(labels))):
             d = mat[i][j]
             if d and d.get("distance"):
-                print(f"    {labels[i][:12]:12s} -> {labels[j][:12]:12s}  {d['distance']/1000:.1f}km / {d['duration']//60}min")
+                logger.info(
+                    f"    {labels[i][:12]:12s} -> {labels[j][:12]:12s}  "
+                    f"{d['distance']/1000:.1f}km / {d['duration']//60}min")
     return context

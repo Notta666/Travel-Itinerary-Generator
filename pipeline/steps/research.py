@@ -2,10 +2,11 @@
 Step 2: 小红书调研 + 笔记精读 + LLM提取景点+美食
 ======================================================
 """
-import sys, os, json, time, logging
+import sys, os, json, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 
 
 def step_2_research(context, xhs=None, progress_callback=None):
@@ -16,9 +17,9 @@ def step_2_research(context, xhs=None, progress_callback=None):
     _report = lambda step, msg, pct: progress_callback and progress_callback(step, msg, pct)
     _report("research", "Step 2/9: 小红书调研 🔍（景点+美食双通道）", 15)
 
-    print(f"\n{'='*50}")
-    print(f"Step 2/9: 小红书调研 🔍（景点+美食双通道）")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 2/9: 小红书调研 🔍（景点+美食双通道）")
+    logger.info(f"{'='*50}")
     cities_to_search = context.get("multi_cities", [])
     if not cities_to_search:
         cities_to_search = [context["city"]]
@@ -44,14 +45,14 @@ def step_2_research(context, xhs=None, progress_callback=None):
     # P2-21: ThreadPoolExecutor 并发搜索（控制并发度为 3，保留微小节流防风控）
     def _exec_search(q_item):
         query, label = q_item
-        print(f"  📕 搜索{label}: {query}")
+        logger.info(f"  📕 搜索{label}: {query}")
         try:
             time.sleep(0.3)  # 轻量节流
             notes = xhs.search(query, limit=5)
-            print(f"     → {label} '{query}': {len(notes)} 篇")
+            logger.info(f"     → {label} '{query}': {len(notes)} 篇")
             return label, notes
         except Exception as e:
-            print(f"     ⚠️ {query} 搜索失败: {e}")
+            logger.warning(f"     ⚠️ {query} 搜索失败: {e}")
             return label, []
 
     with ThreadPoolExecutor(max_workers=3) as search_ex:
@@ -90,7 +91,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
     # P2-21: 并发精读前 6 篇笔记并抓取其评论 (ThreadPoolExecutor max_workers=3)
     if all_notes:
         active_notes = all_notes[:6]
-        print(f"  📖 并发精读 {len(active_notes)} 篇笔记与精彩评论（ThreadPoolExecutor 提速）...")
+        logger.info(f"  📖 并发精读 {len(active_notes)} 篇笔记与精彩评论（ThreadPoolExecutor 提速）...")
 
         def _fetch_note_and_comments(note_idx_tuple):
             idx, note = note_idx_tuple
@@ -133,7 +134,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
                         )
                         content["content"] += "\n【笔记图片视觉分析】:\n" + vis_result
                     except Exception as e:
-                        print(f"⚠️ 当前模型({VISION_MODEL})不支持多模态视觉分析或调用失败，自动跳过图片解析: {e}")
+                        logger.warning(f"⚠️ 当前模型({VISION_MODEL})不支持多模态视觉分析或调用失败，自动跳过图片解析: {e}")
 
             return idx, note.get("title", ""), content
 
@@ -147,7 +148,7 @@ def step_2_research(context, xhs=None, progress_callback=None):
                         i, title, res = res_tuple
                         completed_notes.append((i, title, res))
                         _report("research", f"精读小红书笔记及热评: {title[:10]}...", 15 + int((len(completed_notes)/len(active_notes))*5))
-                        print(f"     ✅ {title[:30]}")
+                        logger.info(f"     ✅ {title[:30]}")
                 except Exception as e:
                     logger.warning(f"读取小红书笔记失败: {e}")
 
@@ -202,15 +203,15 @@ def step_2_research(context, xhs=None, progress_callback=None):
                         food_city_map[f["name"]] = f["city"]
                 context["food_city_map"] = food_city_map
 
-                print(f"  🤖 LLM提取: {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
+                logger.info(f"  🤖 LLM提取: {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
                 for s in xhs_pois["sights"][:3]:
-                    print(f"     🏛️ {s['name']} [{s.get('city','')}] (避雷: {s.get('complaints','无')})")
+                    logger.info(f"     🏛️ {s['name']} [{s.get('city','')}] (避雷: {s.get('complaints','无')})")
                 for f in xhs_pois["foods"][:3]:
-                    print(f"     🍴 {f['name']} [{f.get('city','')}] (避雷: {f.get('complaints','无')})")
+                    logger.info(f"     🍴 {f['name']} [{f.get('city','')}] (避雷: {f.get('complaints','无')})")
         except Exception as e:
-            print(f"  ⚠️ LLM提取失败: {e}")
+            logger.warning(f"  ⚠️ LLM提取失败: {e}")
     else:
-        print("  ⚠️ 未获取到小红书笔记内容")
+        logger.warning("  ⚠️ 未获取到小红书笔记内容")
 
     # 默认值兜底
     context.setdefault("sight_city_map", {})
@@ -222,6 +223,6 @@ def step_2_research(context, xhs=None, progress_callback=None):
     # 从xhs提取的景点名列表（供step3地理编码用）
     context["xhs_sight_names"] = [s["name"] for s in xhs_pois["sights"]]
     context["xhs_food_data"] = xhs_pois["foods"]
-    print(f"  完成: {len(all_notes)}篇笔记 → {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
+    logger.info(f"  完成: {len(all_notes)}篇笔记 → {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅")
     _report("research", f"✅ 完成: {len(xhs_pois['sights'])}个景点 + {len(xhs_pois['foods'])}家餐厅", 20)
     return context

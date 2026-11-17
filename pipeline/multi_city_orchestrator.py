@@ -2,6 +2,8 @@ import copy
 import re
 import datetime
 from pipeline.pipeline_context import PipelineContext
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 
 try:
     from pipeline.run_pipeline import PipelineStoppedError
@@ -39,7 +41,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         if idx > 0:
             c_prefs["start_city"] = multi_cities_list[idx - 1]
         
-        print(f"\n🗺️ [多城市模式] 正在为城市 {c} ({idx+1}/{len(multi_cities_list)}) 生成行程，天数: {c_days}天，开始日期: {current_date}")
+        logger.info(f"\n🗺️ [多城市模式] 正在为城市 {c} ({idx+1}/{len(multi_cities_list)}) 生成行程，天数: {c_days}天，开始日期: {current_date}")
         
         sub_ctx = pipeline_func(
             city=c, days=c_days, use_research=use_research,
@@ -49,7 +51,7 @@ def run_multi_city(pipeline_func, city, days, use_research, manual_pois, prefs, 
         )
         
         if sub_ctx.get("error"):
-            print(f"  ⚠️ [多城市模式] 城市 {c} 子管线执行异常: {sub_ctx['error']}，将跳过合并该城行程")
+            logger.warning(f"  ⚠️ [多城市模式] 城市 {c} 子管线执行异常: {sub_ctx['error']}，将跳过合并该城行程")
         
         city_contexts[c] = sub_ctx
         

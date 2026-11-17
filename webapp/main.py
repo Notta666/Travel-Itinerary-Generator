@@ -22,6 +22,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from utils.log import get_logger  # noqa: E402
+logger = get_logger("webapp")
 
 app = FastAPI(title="AI旅行攻略", version="3.5.8")
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["POST", "GET", "OPTIONS"], allow_headers=["*"])
@@ -116,7 +118,7 @@ async def generate(data: GenerateRequest, request: Request):
     # 小红书调研为可选项：未连接 OpenCLI 时降级为内置推荐库，不再硬拒（与 CLI 行为一致）
     ok, check_msg, details = check_opencli_status()
     if not ok:
-        print(f"  ℹ️ 未检测到 OpenCLI/小红书登录态，将使用内置推荐库生成（{check_msg}）")
+        logger.info(f"  ℹ️ 未检测到 OpenCLI/小红书登录态，将使用内置推荐库生成（{check_msg}）")
 
     goal = data.goal.strip()
     enabled_steps = data.steps
@@ -300,9 +302,9 @@ if __name__ == "__main__":
     # 监听地址与端口可配置：默认 0.0.0.0:8080
     _host = os.environ.get("HOST", "0.0.0.0")
     _port = int(os.environ.get("PORT", "8080"))
-    print("🌍 AI旅行攻略 Web App 启动中...")
-    print(f"   访问地址: http://localhost:{_port}  (host={_host})")
-    print("   按 Ctrl+C 停止")
-    print(f"   SQLite 数据库: {DB_PATH}")
+    logger.info("🌍 AI旅行攻略 Web App 启动中...")
+    logger.info(f"   访问地址: http://localhost:{_port}  (host={_host})")
+    logger.info("   按 Ctrl+C 停止")
+    logger.info(f"   SQLite 数据库: {DB_PATH}")
     uvicorn.run(app, host=_host, port=_port, timeout_keep_alive=600)
 

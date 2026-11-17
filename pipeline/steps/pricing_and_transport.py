@@ -1,7 +1,8 @@
-import sys, os, json, time, copy, re, datetime, logging
+import sys, os, json, time, copy, re, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger("travel_pipeline")
+from utils.log import get_logger
+logger = get_logger("travel_pipeline")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -16,24 +17,24 @@ def step_55_flyai_pricing(context, client=None):
 
     如果 FlyAI 不可用或查询失败，静默降级（当前固定百分比算法不受影响）。
     """
-    print(f"\n{'='*50}")
-    print(f"Step 5.5/9: 飞猪 FlyAI 实时物价查询 ✈️🚄🏨")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 5.5/9: 飞猪 FlyAI 实时物价查询 ✈️🚄🏨")
+    logger.info(f"{'='*50}")
 
     if client is None:
         try:
             from utils.flyai_api import FlyAIApiClient
             client = FlyAIApiClient()
             if not client.check_environment():
-                print("  ⚠️ FlyAI CLI 不可用，跳过实时物价查询")
+                logger.warning("  ⚠️ FlyAI CLI 不可用，跳过实时物价查询")
                 context["flyai_prices"] = {"available": False}
                 return context
         except ImportError:
-            print("  ⚠️ utils.flyai_api 未安装，跳过实时物价查询")
+            logger.warning("  ⚠️ utils.flyai_api 未安装，跳过实时物价查询")
             context["flyai_prices"] = {"available": False}
             return context
         except Exception as e:
-            print(f"  ⚠️ FlyAI 初始化失败: {e}")
+            logger.warning(f"  ⚠️ FlyAI 初始化失败: {e}")
             context["flyai_prices"] = {"available": False}
             return context
 
@@ -48,7 +49,7 @@ def step_55_flyai_pricing(context, client=None):
     hotel_budget_max = prefs.get("hotel_budget_max", 500)
 
     if not start_city or not start_date:
-        print("  ⚠️ 缺少出发城市或日期，跳过实时物价查询")
+        logger.warning("  ⚠️ 缺少出发城市或日期，跳过实时物价查询")
         context["flyai_prices"] = {"available": False}
         return context
 
@@ -85,12 +86,12 @@ def step_55_flyai_pricing(context, client=None):
                         "items": items, "source": source,
                         "cheapest": ch_price, "count": len(items)
                     }
-                    print(f"  ✅ {key}: 查询成功, 最低价 ¥{ch_price}")
+                    logger.info(f"  ✅ {key}: 查询成功, 最低价 ¥{ch_price}")
                 else:
                     results[key] = {"items": [], "source": source, "cheapest": None, "count": 0}
-                    print(f"  ⚠️ {key}: 查询无数据/失败")
+                    logger.warning(f"  ⚠️ {key}: 查询无数据/失败")
         except Exception as e:
-            print(f"  ⚠️ {transport} 查询异常: {e}")
+            logger.warning(f"  ⚠️ {transport} 查询异常: {e}")
 
     # 2. 酒店查询
     time.sleep(1.5)
@@ -114,9 +115,9 @@ def step_55_flyai_pricing(context, client=None):
                     filtered.append(item)
                 if filtered:
                     items = filtered
-                    print(f"  🏨 预算过滤: {len(items)}/{total_hotel_count} 家在 ¥{hotel_budget_min}~{hotel_budget_max}/晚")
+                    logger.info(f"  🏨 预算过滤: {len(items)}/{total_hotel_count} 家在 ¥{hotel_budget_min}~{hotel_budget_max}/晚")
                 else:
-                    print(f"  ⚠️ 无 ¥{hotel_budget_min}~{hotel_budget_max} 酒店，显示全部")
+                    logger.warning(f"  ⚠️ 无 ¥{hotel_budget_min}~{hotel_budget_max} 酒店，显示全部")
             
             cheapest = min(items, key=lambda x: x.get("price", float('inf')))
             ch_price = cheapest.get("price")
@@ -127,18 +128,18 @@ def step_55_flyai_pricing(context, client=None):
             # 调试：记录酒店 API 返回的可选字段质量
             h0 = items[0]
             debug_fields = {k: h0.get(k, "❌缺失") for k in ("star", "decoration_time", "main_pic", "jump_url", "rating")}
-            print(f"  🔍 酒店字段样例: {debug_fields}")
+            logger.info(f"  🔍 酒店字段样例: {debug_fields}")
         else:
             results[key] = {"items": [], "source": source, "cheapest": None, "count": 0}
-            print(f"  ⚠️ hotel: 查询无数据/失败")
+            logger.warning(f"  ⚠️ hotel: 查询无数据/失败")
     except Exception as e:
         results["hotel"] = {"items": [], "source": "error", "cheapest": None, "count": 0}
-        print(f"  ⚠️ hotel 异常: {e}")
+        logger.warning(f"  ⚠️ hotel 异常: {e}")
 
     results["available"] = any(v.get("cheapest") for v in results.values() if isinstance(v, dict))
     context["flyai_prices"] = results
     n = sum(1 for v in results.values() if isinstance(v, dict) and v.get("cheapest"))
-    print(f"  ✅ FlyAI 物价查询完成: {n} 品类有数据")
+    logger.info(f"  ✅ FlyAI 物价查询完成: {n} 品类有数据")
     return context
 
 
@@ -152,9 +153,9 @@ def step_56_transport_decision(context, amap=None):
       3. 预算约束
       4. 出行人数
     """
-    print(f"\n{'='*50}")
-    print(f"Step 5.6/9: 交通方式重评估 🚗✈️🚄")
-    print(f"{'='*50}")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Step 5.6/9: 交通方式重评估 🚗✈️🚄")
+    logger.info(f"{'='*50}")
 
     prefs = context.get("preferences", {})
     current_transport = prefs.get("transport", "").strip()
@@ -165,7 +166,7 @@ def step_56_transport_decision(context, amap=None):
     flyai = context.get("flyai_prices", {})
 
     if not start_city or not city:
-        print("  ⏭️  缺出发城市或目标城市，跳过交通重评估")
+        logger.info("  ⏭️  缺出发城市或目标城市，跳过交通重评估")
         return context
 
     if not amap:
@@ -183,7 +184,7 @@ def step_56_transport_decision(context, amap=None):
     start_coord = amap.geocode(start_city)
     dest_coord = amap.geocode(city)
     if not start_coord or not dest_coord:
-        print("  ⚠️  地理编码失败，跳过交通重评估")
+        logger.warning("  ⚠️  地理编码失败，跳过交通重评估")
         return context
 
     # Haversine 直线距离
@@ -205,8 +206,8 @@ def step_56_transport_decision(context, amap=None):
     except Exception:
         pass
 
-    print(f"  📏 直线距离: {line_dist:.0f}km")
-    print(f"  🚗 驾车距离: {drive_dist:.0f}km / {drive_dur:.0f}min")
+    logger.info(f"  📏 直线距离: {line_dist:.0f}km")
+    logger.info(f"  🚗 驾车距离: {drive_dist:.0f}km / {drive_dur:.0f}min")
 
     # 2. 提取实时票价信息
     flight_price = None
@@ -251,17 +252,17 @@ def step_56_transport_decision(context, amap=None):
             reason = result.get("reason", "")
             if new_transport in ("自驾", "高铁", "飞机"):
                 old = current_transport or "未指定"
-                print(f"  🚗 原定: {old} → 🎯 推荐: {new_transport}（{reason}）")
+                logger.info(f"  🚗 原定: {old} → 🎯 推荐: {new_transport}（{reason}）")
                 if current_transport and new_transport != current_transport:
-                    print(f"  🔄 覆盖原定交通方式: {old} → {new_transport}")
+                    logger.info(f"  🔄 覆盖原定交通方式: {old} → {new_transport}")
                 elif not current_transport:
-                    print(f"  ✅ 自动决策交通方式: {new_transport}")
+                    logger.info(f"  ✅ 自动决策交通方式: {new_transport}")
                 prefs["transport"] = new_transport
                 context["preferences"] = prefs
                 # 更新 flyai 查询：如果决策变了，重新查询正确的品类
                 if flyai.get("available"):
                     if new_transport == "飞机" and not flyai.get("flight", {}).get("items"):
-                        print(f"  🔄 追加查询机票价格...")
+                        logger.info(f"  🔄 追加查询机票价格...")
                         from utils.flyai_api import FlyAIApiClient
                         fc = FlyAIApiClient()
                         items, src = fc.query_flight(start_city, city, context.get("start_date", ""))
@@ -270,7 +271,7 @@ def step_56_transport_decision(context, amap=None):
                             flyai["flight"] = {"items": items, "source": src, "cheapest": ch_flight, "count": len(items)}
                             context["flyai_prices"] = flyai
                     elif new_transport == "高铁" and not flyai.get("train", {}).get("items"):
-                        print(f"  🔄 追加查询高铁价格...")
+                        logger.info(f"  🔄 追加查询高铁价格...")
                         from utils.flyai_api import FlyAIApiClient
                         fc = FlyAIApiClient()
                         items, src = fc.query_train(start_city, city, context.get("start_date", ""))
@@ -279,11 +280,11 @@ def step_56_transport_decision(context, amap=None):
                             flyai["train"] = {"items": items, "source": src, "cheapest": ch_train, "count": len(items)}
                             context["flyai_prices"] = flyai
             else:
-                print(f"  ⚠️ LLM 返回异常交通方式: {new_transport}，保留原值")
+                logger.warning(f"  ⚠️ LLM 返回异常交通方式: {new_transport}，保留原值")
         else:
-            print(f"  ⚠️ LLM 返回非 dict: {result}")
+            logger.warning(f"  ⚠️ LLM 返回非 dict: {result}")
     except Exception as e:
-        print(f"  ⚠️ LLM 交通决策失败: {e}，保留原方式")
+        logger.warning(f"  ⚠️ LLM 交通决策失败: {e}，保留原方式")
 
-    print(f"  ✅ 最终交通方式: {prefs.get('transport', '未指定')}")
+    logger.info(f"  ✅ 最终交通方式: {prefs.get('transport', '未指定')}")
     return context
