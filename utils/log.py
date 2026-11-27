@@ -7,10 +7,11 @@
 import contextvars
 import json
 import logging
-import os
 import sys
 import time
 from contextlib import contextmanager
+
+from utils.config import get_setting
 
 _task_id = contextvars.ContextVar("task_id", default=None)
 _step = contextvars.ContextVar("step", default=None)
@@ -44,7 +45,7 @@ class _JsonFormatter(logging.Formatter):
 
 
 def _make_formatter():
-    if os.environ.get("LOG_FORMAT", "text").strip().lower() == "json":
+    if get_setting("LOG_FORMAT", "text").strip().lower() == "json":
         return _JsonFormatter()
     return logging.Formatter("%(message)s")
 
@@ -56,7 +57,7 @@ def get_logger(name):
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(_make_formatter())
         logger.addHandler(handler)
-        logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
+        logger.setLevel(get_setting("LOG_LEVEL", "INFO").upper())
         logger.propagate = False
         logger._travel_configured = True
     return logger

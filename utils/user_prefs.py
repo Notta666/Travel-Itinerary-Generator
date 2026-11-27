@@ -6,9 +6,7 @@
 """
 import os, json, time
 
-from utils.config import STATE_DIR
-
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from utils.paths import PROJECT_ROOT as BASE, STATE_DIR
 PREFS_FILE = os.path.join(STATE_DIR, "user_prefs.json")
 
 

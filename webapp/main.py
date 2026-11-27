@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from utils.log import get_logger  # noqa: E402
+from utils.config import get_setting  # noqa: E402
 logger = get_logger("webapp")
 
 app = FastAPI(title="AI旅行攻略", version="3.8.0")
@@ -44,7 +45,7 @@ _ip_request_records = {}  # ip -> list of timestamps
 
 def _verify_api_token(request: Request):
     """If API_TOKEN is configured in environment, require and verify token in headers/query."""
-    expected_token = os.environ.get("API_TOKEN", "").strip()
+    expected_token = get_setting("API_TOKEN").strip()
     if not expected_token:
         return  # No token required by default
     auth_header = request.headers.get("Authorization", "")
@@ -336,8 +337,8 @@ async def stream_progress(task_id: str, request: Request, seen: int = None):
 if __name__ == "__main__":
     import uvicorn
     # 监听地址与端口可配置：默认 0.0.0.0:8080
-    _host = os.environ.get("HOST", "0.0.0.0")
-    _port = int(os.environ.get("PORT", "8080"))
+    _host = get_setting("HOST", "0.0.0.0")
+    _port = int(get_setting("PORT", "8080"))
     logger.info("🌍 AI旅行攻略 Web App 启动中...")
     logger.info(f"   访问地址: http://localhost:{_port}  (host={_host})")
     logger.info("   按 Ctrl+C 停止")

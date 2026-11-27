@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("travel_pipeline")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from utils.paths import PROJECT_ROOT as BASE_DIR
 
 
 def _default_cache_dir():
