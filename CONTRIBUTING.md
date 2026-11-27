@@ -20,8 +20,8 @@ Thank you for your interest in contributing! We welcome bug reports, feature req
 git clone https://github.com/Notta666/Travel-Itinerary-Generator.git
 cd Travel-Itinerary-Generator
 
-# Install development requirements
-python -m pip install -r requirements.txt
+# Install development requirements (includes runtime deps)
+python -m pip install -r requirements-dev.txt
 ```
 
 ### 4. Code Style Guidelines
