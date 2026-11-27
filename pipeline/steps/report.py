@@ -78,7 +78,8 @@ def step_8_generate_report(context):
     report += "---\n*由 Hermes AI 生成*\n"
     safe_city = re.sub(r'[^\w\u4e00-\u9fa5\-\.]', '_', city)
     ts = time.strftime("%Y%m%d_%H%M%S")
-    outputs_dir = os.path.join(PROJECT_ROOT, "outputs")
+    from utils.config import OUTPUTS_DIR
+    outputs_dir = OUTPUTS_DIR
     path = os.path.join(outputs_dir, f"{safe_city}_travel_{ts}.md")
     os.makedirs(outputs_dir, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:

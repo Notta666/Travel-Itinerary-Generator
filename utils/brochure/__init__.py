@@ -4,7 +4,7 @@
 一本包含: 封面 → 每日行程(图片卡片) → 交互式Leaflet地图 → 必吃推荐 → 交通指南
 """
 import os, json, time, urllib.request, urllib.parse, re, datetime, logging, threading, html
-from utils.config import AMAP_KEY, BASE_DIR
+from utils.config import AMAP_KEY, BASE_DIR, OUTPUTS_DIR
 from utils import provenance
 
 # HTML 转义辅助：所有注入进手册 HTML 的外部/LLM 派生文本必须经此转义，防 XSS
@@ -884,7 +884,7 @@ def generate(city="上海", itinerary=None, food_highlights=None, overall_note="
     if not itinerary:
         print("⚠️ 无行程数据")
         return None
-    outputs_dir = os.path.join(BASE_DIR, "outputs")
+    outputs_dir = OUTPUTS_DIR
     os.makedirs(outputs_dir, exist_ok=True)
     safe_city = re.sub(r'[^\w\u4e00-\u9fa5\-\.]', '_', city)
     ts = time.strftime("%Y%m%d_%H%M%S")

@@ -10,11 +10,11 @@
   - 无水印源：Wikimedia Commons / Unsplash / Pixabay
 """
 import os, json, time, urllib.request, urllib.error, re, hashlib, random, logging, threading
-from utils.config import AMAP_KEY, BASE_DIR, UNSPLASH_ACCESS_KEY, PIXABAY_API_KEY
+from utils.config import AMAP_KEY, BASE_DIR, STATE_DIR, UNSPLASH_ACCESS_KEY, PIXABAY_API_KEY
 
 logger = logging.getLogger("travel_pipeline")
 
-CACHE_DIR = os.path.join(BASE_DIR, "data", "image_cache")
+CACHE_DIR = os.path.join(STATE_DIR, "image_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 CUSTOM_IMG_DIR = os.path.join(BASE_DIR, "data", "custom_images")
 os.makedirs(CUSTOM_IMG_DIR, exist_ok=True)

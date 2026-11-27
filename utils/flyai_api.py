@@ -36,6 +36,14 @@ logger = logging.getLogger("travel_pipeline")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _default_cache_dir():
+    """飞猪缓存目录：TRAVEL_STATE_DIR 设了就放那里，否则沿用 BASE_DIR/data/cache/flyai。"""
+    state_dir = os.environ.get("TRAVEL_STATE_DIR")
+    if state_dir:
+        return os.path.join(state_dir, "cache", "flyai")
+    return os.path.join(BASE_DIR, "data", "cache", "flyai")
+
+
 class FlyAIApiClient:
     """飞猪 FlyAI API 客户端封装"""
 
@@ -52,7 +60,7 @@ class FlyAIApiClient:
     }
 
     def __init__(self, cache_dir=None, ttls=None):
-        self.cache_dir = cache_dir or os.path.join(BASE_DIR, "data", "cache", "flyai")
+        self.cache_dir = cache_dir or _default_cache_dir()
         os.makedirs(self.cache_dir, exist_ok=True)
         self.ttls = {**self.DEFAULT_TTLS, **(ttls or {})}
         self._cli_available = None  # 懒检测
@@ -528,7 +536,7 @@ class FlyAIApiClient:
                           source='fail' 时表示需降级到百分比估算
         """
         # 1st: 从 POI 缓存中提取描述
-        cache_dir = os.path.join(BASE_DIR, "data", "cache", "flyai")
+        cache_dir = self.cache_dir
         if os.path.exists(cache_dir):
             try:
                 for fname in os.listdir(cache_dir):

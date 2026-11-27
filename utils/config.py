@@ -46,3 +46,10 @@ UNSPLASH_ACCESS_KEY = _load_env_key("UNSPLASH_ACCESS_KEY")     # https://unsplas
 PIXABAY_API_KEY = _load_env_key("PIXABAY_API_KEY")              # https://pixabay.com/api/docs/
 
 BASE_DIR = _BASE_DIR
+
+# 可写目录（运行时写入的个人数据、缓存与产物）。
+# 默认就在项目里（data/、outputs/），与以往一致；设置环境变量可改到别处
+# （测试用它把所有写入引到临时目录，见 tests/conftest.py）。
+# 只读的参考数据（data/references、data/default_pois.json、data/custom_images）不受影响。
+STATE_DIR = os.environ.get("TRAVEL_STATE_DIR") or os.path.join(_BASE_DIR, "data")
+OUTPUTS_DIR = os.environ.get("TRAVEL_OUTPUTS_DIR") or os.path.join(_BASE_DIR, "outputs")

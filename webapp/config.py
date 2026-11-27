@@ -1,4 +1,5 @@
 import os
+import sys
 
 try:
     from dotenv import load_dotenv
@@ -13,11 +14,15 @@ PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
-# Output directory for brochures
-OUTPUTS_DIR = os.path.join(PROJECT, "outputs")
+if PROJECT not in sys.path:
+    sys.path.insert(0, PROJECT)
+from utils.config import STATE_DIR, OUTPUTS_DIR as _OUTPUTS_DIR  # noqa: E402
 
-# Data directory for database
-DATA_DIR = os.path.join(PROJECT, "data")
+# Output directory for brochures (TRAVEL_OUTPUTS_DIR 可覆盖，默认 outputs/)
+OUTPUTS_DIR = _OUTPUTS_DIR
+
+# Data directory for database (TRAVEL_STATE_DIR 可覆盖，默认 data/)
+DATA_DIR = STATE_DIR
 DB_PATH = os.path.join(DATA_DIR, "tasks.db")
 
 # Ensure required directories exist
