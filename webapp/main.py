@@ -8,7 +8,7 @@ import json, re, uuid, asyncio, threading, urllib.parse
 from html import escape
 from pydantic import BaseModel, Field
 
-from webapp.config import STATIC_DIR, TEMPLATES_DIR, OUTPUTS_DIR, DB_PATH, CORS_ORIGINS
+from webapp.config import STATIC_DIR, TEMPLATES_DIR, OUTPUTS_DIR, DB_PATH, CORS_ORIGINS, HOST, PORT
 from webapp.db import _init_db, store_task, update_task, get_task
 from webapp.task_manager import _run_pipeline_task, cancel_task
 
@@ -336,9 +336,8 @@ async def stream_progress(task_id: str, request: Request, seen: int = None):
 
 if __name__ == "__main__":
     import uvicorn
-    # 监听地址与端口可配置：默认 0.0.0.0:8080
-    _host = get_setting("HOST", "0.0.0.0")
-    _port = int(get_setting("PORT", "8080"))
+    # 监听地址与端口见 webapp/config.py：默认 127.0.0.1:8080，HOST/PORT 可配置
+    _host, _port = HOST, PORT
     logger.info("🌍 AI旅行攻略 Web App 启动中...")
     logger.info(f"   访问地址: http://localhost:{_port}  (host={_host})")
     logger.info("   按 Ctrl+C 停止")

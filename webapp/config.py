@@ -21,6 +21,11 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# 直接运行 webapp/main.py 时的监听地址：默认只本机访问。
+# 要局域网访问在 .env 设 HOST=0.0.0.0（务必同时配置 API_TOKEN）。Docker 镜像里已设 HOST=0.0.0.0。
+HOST = get_setting("HOST", "127.0.0.1")
+PORT = int(get_setting("PORT", "8080"))
+
 # CORS origins (environment configurable for security)
 # Default: localhost only. Set CORS_ORIGINS="*" and CORS_ALLOW_ALL="1" to allow all origins (development only)
 # Format: comma-separated list, e.g. "http://localhost:8080,http://127.0.0.1:8080"
