@@ -6,29 +6,60 @@
 使用方式:
     from utils.config import DEEPSEEK_API_KEY, AMAP_KEY, BASE_DIR
 """
+import logging
 import os
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from utils.paths import ENV_FILE, PROJECT_ROOT as _BASE_DIR, STATE_DIR, OUTPUTS_DIR  # noqa: F401
+
+_logger = logging.getLogger(__name__)
+_PLACEHOLDERS = {"", "***"}
+
+
+def _read_dotenv(path=ENV_FILE):
+    """读取 .env，返回 {键: 值}。
+
+    同一个键出现多次时取第一条有效值（与以往一致），并打一条警告提示重复；
+    不会改动 .env 文件本身。值 "***" 视为占位符，忽略。
+    """
+    values, counts = {}, {}
+    if not os.path.exists(path):
+        return values
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, v = line.split("=", 1)
+                key = key.strip()
+                if key.startswith("export "):
+                    key = key[len("export "):].strip()
+                v = v.strip().strip("\"'")
+                counts[key] = counts.get(key, 0) + 1
+                if key not in values and v not in _PLACEHOLDERS:
+                    values[key] = v
+    except Exception:
+        return {}
+    for key, n in counts.items():
+        if n > 1:
+            _logger.warning(".env 里 %s 出现了 %d 次，使用第一条有效值", key, n)
+    return values
+
+
+_DOTENV = _read_dotenv()
 
 
 def _load_env_key(key_name: str) -> str:
-    """从环境变量或 .env 文件加载 API Key"""
+    """先看环境变量，再看 .env；都没有返回空字符串。"""
     val = os.environ.get(key_name, "")
     if val:
         return val
-    env_path = os.path.join(_BASE_DIR, ".env")
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith(f"{key_name}="):
-                        v = line.split("=", 1)[1].strip().strip("\"'")
-                        if v and v != "***":
-                            return v
-        except Exception:
-            pass
-    return ""
+    return _DOTENV.get(key_name, "")
+
+
+def get_setting(name: str, default: str = "") -> str:
+    """读取一项配置（环境变量优先，其次 .env），没有时返回 default。"""
+    return _load_env_key(name) or default
 
 
 DEEPSEEK_API_KEY = _load_env_key("DEEPSEEK_API_KEY")
@@ -47,9 +78,4 @@ PIXABAY_API_KEY = _load_env_key("PIXABAY_API_KEY")              # https://pixaba
 
 BASE_DIR = _BASE_DIR
 
-# 可写目录（运行时写入的个人数据、缓存与产物）。
-# 默认就在项目里（data/、outputs/），与以往一致；设置环境变量可改到别处
-# （测试用它把所有写入引到临时目录，见 tests/conftest.py）。
-# 只读的参考数据（data/references、data/default_pois.json、data/custom_images）不受影响。
-STATE_DIR = os.environ.get("TRAVEL_STATE_DIR") or os.path.join(_BASE_DIR, "data")
-OUTPUTS_DIR = os.environ.get("TRAVEL_OUTPUTS_DIR") or os.path.join(_BASE_DIR, "outputs")
+# 可写目录（STATE_DIR、OUTPUTS_DIR）见 utils/paths.py，这里只是为旧代码保留同名导出。

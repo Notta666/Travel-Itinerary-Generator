@@ -3,9 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
 logger = get_logger("travel_pipeline")
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+from utils.paths import PROJECT_ROOT
 
 from utils.amap_api import AMapClient
 amap = AMapClient()
@@ -24,7 +22,6 @@ def step_85_tips(context):
     start_city = prefs.get("start_city", "")
 
     try:
-        sys.path.insert(0, PROJECT_ROOT)
         from utils.tips import generate_tips
         tips = generate_tips(city, days, transport, preference, budget, start_city)
         context["travel_tips"] = tips
@@ -36,7 +33,6 @@ def step_85_tips(context):
 
     # 天气信息
     try:
-        sys.path.insert(0, PROJECT_ROOT)
         from utils.weather import get_weather_for_dates
         start_date_str = context.get("start_date")
         days = context.get("days", 2)

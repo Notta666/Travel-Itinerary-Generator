@@ -15,7 +15,8 @@
 """
 
 import urllib.request, urllib.parse, json, os, time, threading
-from utils.config import AMAP_KEY, BASE_DIR
+from utils.config import AMAP_KEY, BASE_DIR  # noqa: F401
+from utils.paths import REFERENCES_DIR
 
 class AmapApiError(Exception):
     """高德 API 业务错误（非 200 或 status=0）"""
@@ -49,7 +50,7 @@ def load_poi_types():
     global _POI_TYPES
     if _POI_TYPES is not None:
         return _POI_TYPES
-    path = os.path.join(BASE_DIR, "data", "references", "poi_typecode.json")
+    path = os.path.join(REFERENCES_DIR, "poi_typecode.json")
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             _POI_TYPES = json.load(f)
@@ -73,7 +74,7 @@ def load_adcodes():
     global _ADCODES
     if _ADCODES is not None:
         return _ADCODES
-    path = os.path.join(BASE_DIR, "data", "references", "city_adcode.json")
+    path = os.path.join(REFERENCES_DIR, "city_adcode.json")
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             _ADCODES = json.load(f)

@@ -3,9 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.log import get_logger
 logger = get_logger("travel_pipeline")
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+from utils.paths import PROJECT_ROOT, DEFAULT_POIS_PATH
 
 from utils.amap_api import AMapClient
 
@@ -42,7 +40,7 @@ def step_3_geocode(context, manual_pois=None):
         logger.warning("  ⚠️ 无可编码POI，使用内置默认景点")
         default_pois = {}
         try:
-            default_pois_path = os.path.join(PROJECT_ROOT, "data", "default_pois.json")
+            default_pois_path = DEFAULT_POIS_PATH
             if os.path.exists(default_pois_path):
                 with open(default_pois_path, "r", encoding="utf-8") as f:
                     default_pois = json.load(f)
