@@ -40,7 +40,7 @@ python pipeline/run_pipeline.py --goal "带爸妈去南方"
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.13（CI 与 Docker 同版本）
 - 高德开放平台 Web 服务 API Key（[免费申请](https://lbs.amap.com/)）
 - DeepSeek API Key（[官网获取](https://platform.deepseek.com/)）
 - （如需小红书调研功能）Chrome 浏览器 + OpenCLI 扩展（[安装指南](https://github.com/jackwener/OpenCLI)）
@@ -143,7 +143,7 @@ docker compose down           # 停止
 ### 测试
 
 ```bash
-python -m pip install pytest
+python -m pip install -r requirements-dev.txt
 python -m pytest tests/ -q   # 183 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
 ```
 
