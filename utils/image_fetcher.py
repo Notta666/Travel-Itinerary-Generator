@@ -10,7 +10,7 @@
   - 无水印源：Wikimedia Commons / Unsplash / Pixabay
 """
 import os, json, time, urllib.request, urllib.error, re, hashlib, random, logging, threading
-from utils.config import AMAP_KEY, BASE_DIR, UNSPLASH_ACCESS_KEY, PIXABAY_API_KEY  # noqa: F401
+from utils.config import AMAP_KEY, BASE_DIR, UNSPLASH_ACCESS_KEY, PIXABAY_API_KEY, get_setting  # noqa: F401
 from utils.paths import IMAGE_CACHE_DIR, CUSTOM_IMAGES_DIR
 
 logger = logging.getLogger("travel_pipeline")
@@ -217,7 +217,7 @@ def _wikimedia(name, limit=2):
     try:
         q = urllib.request.quote(name)
         url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={q}&gsrlimit={limit}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json"
-        req = urllib.request.Request(url, headers={"User-Agent": "projects/travel-itinerary-generator/3.0 (hermes-agent)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "travel-itinerary-generator/3.8 (https://github.com/Notta666/Travel-Itinerary-Generator)"})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read())
         pages = data.get("query", {}).get("pages", {})
@@ -374,6 +374,31 @@ def _bing(name, limit=2):
 
 # ─── 引擎链编排 ─────────────────────────────────────
 
+# 360 / 百度 / Bing 是免 Key 的网页图片搜索接口。IMAGE_FREE_SOURCES=off 时不调用它们，
+# 只用本地图片、高德、Wikimedia 和（配了 Key 的）Pixabay / Unsplash。默认开，产出与以往一致。
+_FREE_SOURCE_ENGINES = {"360", "Baidu", "Bing"}
+
+
+def free_sources_enabled():
+    return get_setting("IMAGE_FREE_SOURCES", "on").strip().lower() not in ("off", "0", "false", "no")
+
+
+def _engine_chain():
+    """图片引擎链（按顺序尝试）；IMAGE_FREE_SOURCES=off 时去掉 360 / 百度 / Bing。"""
+    chain = [
+        ("Gaode", _gaode),
+        ("Wikimedia", _wikimedia),
+        ("360", _so),
+        ("Baidu", _baidu),
+        ("Bing", _bing),
+        ("Pixabay", _pixabay),
+        ("Unsplash", _unsplash),
+    ]
+    if not free_sources_enabled():
+        chain = [(n, fn) for n, fn in chain if n not in _FREE_SOURCE_ENGINES]
+    return chain
+
+
 def get_photos(name, city="上海", category=""):
     """增强版图片获取：
        [本地图片] → [查询词列表] × [高德 → Wikimedia → 360 → 百度 → Bing → Pixabay → Unsplash]
@@ -397,15 +422,7 @@ def get_photos(name, city="上海", category=""):
         queries.append(cleaned)
 
     # 3. 引擎链定义（顺序执行）
-    engine_chain = [
-        ("Gaode", _gaode),
-        ("Wikimedia", _wikimedia),
-        ("360", _so),
-        ("Baidu", _baidu),
-        ("Bing", _bing),
-        ("Pixabay", _pixabay),
-        ("Unsplash", _unsplash),
-    ]
+    engine_chain = _engine_chain()
 
     # ---- 分类URL特征过滤（防止美食景点图片混淆） ----
     _FOOD_URL_PATTERNS = ["meituan", "dianping", "restaurant", "menu", "food",
