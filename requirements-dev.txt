@@ -1,0 +1,9 @@
+# 开发与测试依赖：pip install -r requirements-dev.txt（已包含运行依赖）
+-r requirements.txt
+
+pytest>=9.2
+pytest-timeout>=2.4
+# fastapi.testclient 需要 httpx
+httpx>=0.28
+black>=26.10
+flake8>=7.5
