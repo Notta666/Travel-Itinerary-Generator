@@ -1,18 +1,12 @@
-# Python 3.10+ standard library is used for the core system.
-# No external Python package dependencies are required to run the core pipeline.
-#
-# Optional development packages:
-pytest>=7.0.0
-black>=23.0.0
-flake8>=6.0.0
+# 运行依赖（命令行流水线只用标准库；以下供网页端、手册渲染和行程校验）
+# 版本下限按当前本机环境写，不锁死上限。开发和测试依赖见 requirements-dev.txt。
 
-# Web App dependencies
-fastapi>=0.100.0
-uvicorn>=0.23.0
+# Web App
+fastapi>=0.163
+uvicorn>=0.54
 
 # Brochure template rendering
-jinja2>=3.0.0
+jinja2>=3.1
 
 # Itinerary schema validation (anti-hallucination)
-pydantic>=2
-
+pydantic>=2.14
