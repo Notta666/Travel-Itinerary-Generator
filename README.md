@@ -40,7 +40,7 @@ python pipeline/run_pipeline.py --goal "带爸妈去南方"
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.13（CI 与 Docker 同版本）
 - 高德开放平台 Web 服务 API Key（[免费申请](https://lbs.amap.com/)）
 - DeepSeek API Key（[官网获取](https://platform.deepseek.com/)）
 - （如需小红书调研功能）Chrome 浏览器 + OpenCLI 扩展（[安装指南](https://github.com/jackwener/OpenCLI)）
@@ -143,49 +143,55 @@ docker compose down           # 停止
 ### 测试
 
 ```bash
-python -m pip install pytest
-python -m pytest tests/ -q   # 183 项测试，覆盖 Goal 解析/预算/地理编码/手册模板完整性等
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/ -q   # 205 项测试，覆盖 Goal 解析/预算/地理编码/手册模板/导出/网页安全等
 ```
+
+测试全程离线：不访问外网（本机代理也绕不过），不调用 opencli / flyai，不读 `.env` 里的真 Key，所有写入进临时目录；跑完若项目里的 `data/` 或 `outputs/` 有变化，整次测试判失败。需要真实联网的手动集成测试可设 `TR_TESTS_ALLOW_NETWORK=1`。
 
 ---
 
 ## 🏗️ 项目架构
 
 ```
-projects/travel-itinerary-generator/
+Travel-Itinerary-Generator/
+├── main.py                    # ASGI 入口转发（uvicorn main:app）
 ├── pipeline/
 │   ├── run_pipeline.py        # 工序链入口（--goal 自然语言解析）
-│   └── steps/
-│       ├── research.py        # Step 2: 小红书调研（已提取模块化）
-│       └── planner.py         # Step 6: 对抗辩论路线规划（已提取模块化）
+│   └── steps/                 # 各步骤：init / research / geocode / enrich / distance_matrix /
+│                              #   planner / pricing_and_transport / query_tickets / report / tips / deliver
 ├── utils/
-│   ├── amap_api.py            # 高德地图API封装（地理编码/POI搜索/路径规划）
-│   ├── brochure/              # 图文手册生成器
-│   │   ├── __init__.py        #   generate_brochure() 入口
-│   │   ├── renderer.py        #   Jinja2 模板渲染
-│   │   └── templates/         #   brochure.html 模板
-│   ├── config.py              # 统一 API Key 管理
-│   ├── llm.py                 # LLMClient 多后端抽象（DeepSeek + 占位）
-│   ├── research.py            # 小红书调研工具（OpenCLI → LLM 降级）
-│   ├── tips.py                # 出行建议生成器
-│   ├── weather.py             # 高德天气查询
-│   ├── image_fetcher.py       # 多引擎图片获取（高德→360→百度→Bing）
-│   ├── user_prefs.py          # 用户偏好记忆系统
+│   ├── paths.py               # 项目根、只读参考数据、可写目录（TRAVEL_STATE_DIR / TRAVEL_OUTPUTS_DIR）
+│   ├── config.py              # API Key 与配置读取（环境变量优先，其次 .env，只此一处）
+│   ├── amap_api.py            # 高德地图 API 封装（地理编码 / POI 搜索 / 路径规划）
+│   ├── flyai_api.py           # 飞猪 FlyAI CLI 封装（交通 / 酒店 / 门票价格）
+│   ├── brochure/              # 图文手册：__init__.py 入口、renderer.py、templates/brochure.html
+│   ├── exporters.py           # .ics / .gpx / .kml 导出
+│   ├── provenance.py          # 数据来源与时效标记
+│   ├── schema.py              # 行程结构校验（pydantic）
+│   ├── llm.py                 # LLMClient 多后端抽象
+│   ├── research.py            # 小红书调研（OpenCLI → LLM 降级）
+│   ├── image_fetcher.py       # 多引擎图片获取（本地 → 高德 → Wikimedia → 360/百度/Bing → Pixabay/Unsplash）
+│   ├── tips.py / weather.py   # 出行建议、天气
+│   ├── user_prefs.py          # 用户偏好记忆
+│   ├── parsers.py / distance_matrix.py / log.py
 ├── webapp/
-│   ├── main.py                # FastAPI 网页应用（SSE + SQLite 持久化）
-│   ├── templates/index.html   # 前端模板（独立于后端）
-│   └── static/
-│       ├── style.css          # 独立样式表
-│       └── app.js             # 独立前端逻辑
-├── tests/
-│   ├── test_goal_parser.py    # 目标解析测试
-│   ├── test_budget_parser.py  # 预算解析测试
-│   ├── test_config.py         # 配置加载测试
-│   ├── test_amap_client.py    # AMap 客户端测试（Mock HTTP）
-│   └── test_weather.py        # 天气模块测试
+│   ├── main.py                # FastAPI 网页应用（SSE + SQLite）
+│   ├── config.py              # 监听地址、目录、CORS
+│   ├── db.py / task_manager.py
+│   ├── templates/index.html   # 前端页面
+│   └── static/                # 静态资源目录（当前为空）
+├── scripts/build_default_pois.py  # 手动维护默认 POI 数据
+├── tests/                     # pytest（conftest.py 负责离线与写入隔离）
 ├── data/
-│   └── references/            # POI码表、城市编码表
-└── outputs/                   # 生成产物
+│   ├── references/            # POI 码表、城市编码表（只读）
+│   ├── default_pois.json      # 默认 POI（只读）
+│   └── custom_images/         # 自定义图片（只读）
+│   # 运行时还会写入：user_prefs.json、tasks.db、cache/、image_cache/
+├── outputs/                   # 生成产物
+├── Dockerfile / docker-compose.yml
+├── requirements.txt           # 运行依赖
+└── requirements-dev.txt       # 开发测试依赖（含运行依赖）
 ```
 
 ### Pipeline 工序链
@@ -217,7 +223,7 @@ projects/travel-itinerary-generator/
 | POI坐标验证 | 高德地图 API | 🥈 辅助验证 |
 | 酒店 | 高德周边搜索 | 🥈 |
 | 天气 | 高德天气 API | 🥈 |
-| 图片 | 高德→360图片→百度/Bing | 🥉 降级检索 |
+| 图片 | 本地→高德→Wikimedia→360/百度/Bing（可关）→Pixabay/Unsplash | 🥉 降级检索 |
 | 路线规划 | DeepSeek API | 决策引擎 |
 
 ---
@@ -243,12 +249,21 @@ projects/travel-itinerary-generator/
 
 ### 环境变量
 
-在 `.env` 文件中配置：
+都可以写在项目根目录的 `.env` 里（模板见 `.env.example`），也可以直接设成系统环境变量；两处都有时以环境变量为准。同一个键在 `.env` 里写了多次时取第一条，并在启动时提示。
 
-```env
-DEEPSEEK_API_KEY=«redacted:sk-…»
-AMAP_KEY=your-gaode-api-key-here
-```
+| 变量 | 必填 | 默认 | 说明 |
+|:---|:---:|:---|:---|
+| `DEEPSEEK_API_KEY` | ✅ | — | 行程规划、出行建议 |
+| `AMAP_KEY` | ✅ | — | 高德地理编码、POI、路线、天气、图片 |
+| （飞猪 Key） | | — | 实时价格；不读 `.env`，用 `flyai config set FLYAI_API_KEY …` 配在 flyai CLI 里 |
+| `UNSPLASH_ACCESS_KEY` / `PIXABAY_API_KEY` | | 空 | 可选的无水印图片源 |
+| `OPENAI_API_KEY` / `VISION_API_KEY` / `VISION_API_BASE` / `VISION_MODEL` | | 空 / OpenAI / gpt-4o | 多模态识图（可选） |
+| `IMAGE_FREE_SOURCES` | | `on` | 设 `off` 不再调用 360 / 百度 / Bing 图片搜索 |
+| `HOST` / `PORT` | | `127.0.0.1` / `8080` | 直接运行网页端时的监听地址；Docker 内为 `0.0.0.0:8000` |
+| `API_TOKEN` | | 空 | 设置后网页端 API 需要 Token |
+| `CORS_ORIGINS` / `CORS_ALLOW_ALL` | | 本机 8080 | 跨域白名单 |
+| `LOG_FORMAT` / `LOG_LEVEL` | | `text` / `INFO` | 日志格式与级别 |
+| `TRAVEL_STATE_DIR` / `TRAVEL_OUTPUTS_DIR` | | `data/` / `outputs/` | 把偏好、任务库、缓存或产物改到别的目录 |
 
 高德 API Key 需要在[控制台](https://console.amap.com/)开通以下服务：
 - 地理编码/逆地理编码

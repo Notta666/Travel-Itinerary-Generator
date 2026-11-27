@@ -26,7 +26,7 @@ from utils.log import get_logger  # noqa: E402
 from utils.config import get_setting  # noqa: E402
 logger = get_logger("webapp")
 
-app = FastAPI(title="AI旅行攻略", version="3.8.0")
+app = FastAPI(title="AI旅行攻略", version="3.9.0")
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["POST", "GET", "OPTIONS"], allow_headers=["*"])
 
 # Static files and templates setup
@@ -91,7 +91,7 @@ class GenerateRequest(BaseModel):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "3.8.0"}
+    return {"status": "ok", "version": "3.9.0"}
 
 
 @app.get("/", response_class=HTMLResponse)

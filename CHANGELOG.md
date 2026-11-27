@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.0] - 2026-11-27
+### Changed
+- **测试隔离**：`tests/conftest.py` 把运行时写入引到临时目录（`TRAVEL_STATE_DIR` / `TRAVEL_OUTPUTS_DIR`），清代理并关掉 urllib 的系统代理，Key 一律假值，禁用 opencli / flyai；会话结束检查项目 `data/`、`outputs/` 未被改动
+- **依赖与版本**：`requirements.txt` 只留运行依赖，新增 `requirements-dev.txt`；CI 与 Dockerfile 统一 Python 3.13；CI 去掉 `black --check`，只跑 flake8 语法级检查与 pytest
+- **路径与配置**：新增 `utils/paths.py` 集中路径；`.env` 只由 `utils/config` 读取（新增 `get_setting`，同键重复时警告）；网页端去掉 python-dotenv
+- **网页端默认只本机访问**：直接运行时 `HOST` 默认 `127.0.0.1`（Docker 不变）
+- **图片源开关**：`IMAGE_FREE_SOURCES`（默认 on）控制 360 / 百度 / Bing；Wikimedia 请求的 User-Agent 去掉 agent 名
+- README：环境变量清单、架构树、测试说明、图片来源声明
+
+### Fixed
+- `FlyAIApiClient.query_poi_ticket` 改读客户端自己的缓存目录（原写死项目 `data/cache/flyai`）
+
 ## [3.8.0] - 2026-11-18
 ### Added
 - **多格式导出**：新增 `utils/exporters.py`（手写标准格式，无新增依赖）——`to_ics()`（RFC 5545：有日期+时段的 slot 为 `TZID=Asia/Shanghai` 定时事件并附 VTIMEZONE，无钟点的为全天事件；SUMMARY/LOCATION/GEO/DESCRIPTION 含交通、备注、价格及来源；UID=`sha1(行程id+日期+名称)@travel-itinerary`；CRLF、75 octets 折行、文本转义）、`to_gpx()`（GPX 1.1，每天一个 `<rte>`）、`to_kml()`（KML 2.2，每天一个 Folder，含 Placemark 与当日路线 LineString）；无坐标的点在 GPX/KML 中跳过并在 metadata/description 注明数量；坐标优先取 slot 自身，其次按名称回查 `poi_enriched`

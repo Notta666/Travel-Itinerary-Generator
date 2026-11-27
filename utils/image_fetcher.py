@@ -217,7 +217,7 @@ def _wikimedia(name, limit=2):
     try:
         q = urllib.request.quote(name)
         url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={q}&gsrlimit={limit}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json"
-        req = urllib.request.Request(url, headers={"User-Agent": "travel-itinerary-generator/3.8 (https://github.com/Notta666/Travel-Itinerary-Generator)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "travel-itinerary-generator/3.9 (https://github.com/Notta666/Travel-Itinerary-Generator)"})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read())
         pages = data.get("query", {}).get("pages", {})
